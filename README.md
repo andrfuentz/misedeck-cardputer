@@ -29,8 +29,6 @@ A Portuguese/Brazilian firmware build is also provided as **v1.1 PT-BR**.
 - Provides a mobile-friendly browser interface
 - Lets you edit, save, and download recipe TXT files
 - Shares compact recipe summaries through offline QR codes
-- Includes an About screen with a hidden Portal cake recipe easter egg
-- Includes a short celesta/music-box style opening motif
 
 ## Hardware
 
@@ -135,18 +133,5 @@ See [docs/INSTALL.md](docs/INSTALL.md) for flashing instructions.
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Portuguese README](README.pt-BR.md)
 
-## Media
-
-Suggested media folders:
-
-```text
-media/photos/
-media/screenshots/
-media/video/
-```
-
-Screenshots, photos, and demo videos can be added there for the public GitHub page.
-
-## License
 
 Cyber Chef is released under the [MIT License](LICENSE).
