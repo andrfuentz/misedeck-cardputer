@@ -1,6 +1,6 @@
-# Install and flashing guide
+﻿# Install and flashing guide
 
-This guide explains how to flash MiseDeck to an M5Stack Cardputer.
+This guide explains how to flash Mise_Deck to an M5Stack Cardputer.
 
 ## Requirements
 
@@ -35,12 +35,12 @@ On macOS/Linux, the port will look different, such as `/dev/ttyACM0` or `/dev/cu
 
 Use FAT32.
 
-MiseDeck creates/uses:
+Mise_Deck creates/uses:
 
 ```text
 /RECEITAS/
 /IMPORTAR/
-/MISEDECK_BACKUP.txt
+/MISE_DECK_BACKUP.txt
 ```
 
 To import TXT recipes manually:
@@ -50,7 +50,7 @@ To import TXT recipes manually:
 
 ## First boot
 
-On boot, MiseDeck shows the animated intro screen.
+On boot, Mise_Deck shows the animated intro screen.
 
 - Press `OK` to enter immediately.
 - If nothing is pressed, it enters the menu automatically after 15 seconds.
@@ -91,3 +91,5 @@ If mDNS does not work on your network, use the IP shown on the Cardputer.
 - Check if the microSD card is inserted.
 - Use FAT32.
 - Avoid very old or unreliable microSD cards.
+
+

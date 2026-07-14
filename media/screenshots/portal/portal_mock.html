@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mise_Deck Portal Preview</title>
+  <style>
+    :root{--bg:#050300;--panel:#120900;--amber:#ffb000;--dim:#9b6a20;--line:#5d3a00;--hot:#ffd36a;--danger:#ff5a36}
+    *{box-sizing:border-box}
+    html{font-size:16px}
+    body{margin:0;background:radial-gradient(circle at top,#1b0d00 0,#050300 45%,#000 100%);color:var(--amber);font-family:ui-monospace,Consolas,monospace;-webkit-text-size-adjust:100%}
+    .wrap{max-width:1100px;margin:auto;padding:22px}
+    .top{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:14px}
+    h1{margin:0;letter-spacing:2px;text-shadow:0 0 9px #ff8c00;font-size:clamp(24px,5vw,42px);color:var(--amber)}
+    .slogan{display:block;color:var(--hot);font-size:15px;margin-top:4px}
+    .dim{color:var(--dim)}
+    .topright{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+    .topstatus{display:flex;gap:10px;align-items:stretch}
+    .createbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .status,.tab,.recipe,.modalbox{border:1px solid var(--line);background:rgba(18,9,0,.92);box-shadow:0 0 18px #3a2200}
+    .status{padding:10px 12px;text-align:right}
+    .tabs{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}
+    .tab{color:var(--amber);padding:10px 12px;cursor:pointer;min-height:42px}
+    .tab.active{background:var(--amber);color:#000}
+    .panel h2{margin:12px 0}
+    .recipe{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px;margin:10px 0}
+    .recipe h3{margin:0 0 6px 0;font-size:20px}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    button,.btn{border:1px solid var(--amber);background:#1b0d00;color:var(--hot);padding:10px 13px;text-decoration:none;font:inherit;cursor:pointer;min-height:42px;border-radius:0}
+    button:hover,.btn:hover{background:var(--amber);color:#000}
+    .create{border-width:2px;background:#2a1200;color:#ffd36a;box-shadow:0 0 14px #5d3a00}
+    .syncTop{min-width:86px;background:var(--amber);color:#000;font-weight:bold}
+    .backupFoot{margin:28px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-align:right}
+    .modal{display:flex;position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.78);padding:18px}
+    .modal.hidden{display:none}
+    .modalbox{width:min(920px,100%);max-height:92vh;margin:auto;padding:18px;overflow:auto}
+    .modalbar{display:flex;justify-content:space-between;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px}
+    #mtitle{font-size:22px;text-shadow:0 0 8px #ff8c00}
+    .form{border:1px solid var(--line);padding:12px;margin:12px 0;background:#070300}
+    .grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px}
+    .field label{display:block;color:var(--dim);font-size:12px;margin-bottom:4px}
+    .field input,.field select,.row input{width:100%;background:#020100;color:var(--hot);border:1px solid var(--amber);font:inherit;padding:9px;text-transform:uppercase}
+    .row,.prepCard{border:1px solid var(--line);padding:10px;margin:8px 0;background:#0b0500}
+    .row{display:grid;grid-template-columns:2fr 110px 44px;gap:8px;align-items:center}
+    .tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+    .danger{border-color:var(--danger);color:#ff9a7c}
+    .scale{border:1px solid var(--line);padding:12px;margin:12px 0;background:#0b0500}
+    .scale input{background:#050300;border:1px solid var(--amber);color:var(--hot);padding:9px;font:inherit;width:150px}
+    .backupChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+    .shotLabel{position:fixed;left:12px;bottom:10px;color:var(--dim);font-size:12px;letter-spacing:.08em}
+    @media(max-width:650px){
+      html{font-size:18px}.wrap{padding:14px}.top,.recipe,.topright,.topstatus{display:block}.topright{align-items:stretch}.slogan{font-size:14px;line-height:1.35}.status{text-align:left;margin-top:8px;font-size:13px}.syncTop{width:100%;margin-top:8px}.createbar{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}.createbar button,.syncTop{font-size:16px;padding:13px}.tabs{position:sticky;top:0;z-index:5;background:rgba(5,3,0,.96);margin:12px -14px 14px;padding:10px 14px;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}.tab{flex:0 0 auto;padding:12px 14px;font-size:15px}.panel h2{font-size:20px;margin:12px 0}.recipe{padding:15px;margin:12px 0}.recipe h3{font-size:22px;line-height:1.2}.recipe .dim{font-size:14px;line-height:1.35}.actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.actions button,.actions .btn,.tools button,.tools .btn{width:100%;text-align:center;padding:13px}.modal{padding:0;align-items:stretch}.modalbox{width:100%;height:100vh;max-height:none;margin:0;border:0;padding:14px}.modalbar{position:sticky;top:0;background:#120900;z-index:6}.modalbar button{padding:12px 14px}#mtitle{font-size:20px;line-height:1.2}.scale{padding:12px}.scale p{line-height:1.45}.scale input{width:100%;font-size:18px;margin:6px 0}.scale button{width:100%;margin-top:8px}.grid,.row,.backupChoices{display:grid;grid-template-columns:1fr}.field input,.field select,.row input{font-size:18px}.backupFoot{text-align:center}.backupFoot button{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1 id="brandTitle">Mise_Deck</h1>
+        <div class="slogan"><em>"A pocket mise en place for the Cardputer"</em></div>
+      </div>
+      <div class="topright">
+        <div class="topstatus">
+          <button class="syncTop">SYNC</button>
+          <div class="status">IP 192.168.0.42<br>FW v1.5.0<br>3 recipes</div>
+        </div>
+        <div class="createbar">
+          <button class="create">+ NEW SIMPLE</button>
+          <button class="create">+ NEW COMPOSITE</button>
+        </div>
+      </div>
+    </header>
+    <nav class="tabs">
+      <button class="tab active">ALL</button>
+      <button class="tab">MAINS</button>
+      <button class="tab">DOUGHS</button>
+      <button class="tab">SWEETS</button>
+      <button class="tab">SAUCES</button>
+      <button class="tab">OTHER</button>
+    </nav>
+    <section class="panel">
+      <h2>ALL</h2>
+      <article class="recipe">
+        <div><h3>â˜… FOCACCIA DO ANDRE</h3><p class="dim">DOUGHS // SIMPLE // TOTAL 700.3g</p></div>
+        <div class="actions"><button>OPEN</button><a class="btn">DOWNLOAD TXT</a></div>
+      </article>
+      <article class="recipe">
+        <div><h3>SHOKUPAN</h3><p class="dim">DOUGHS // COMPOSITE // TOTAL 687.0g</p></div>
+        <div class="actions"><button>OPEN</button><a class="btn">DOWNLOAD TXT</a></div>
+      </article>
+      <article class="recipe">
+        <div><h3>BEURRE BLANC</h3><p class="dim">SAUCES // SIMPLE // TOTAL 320.0g</p></div>
+        <div class="actions"><button>OPEN</button><a class="btn">DOWNLOAD TXT</a></div>
+      </article>
+    </section>
+    <div class="backupFoot"><button>BACKUP</button></div>
+  </div>
+
+  <div id="recipeModal" class="modal hidden">
+    <div class="modalbox">
+      <div class="modalbar"><strong id="mtitle">FOCACCIA DO ANDRE</strong><button>CLOSE</button></div>
+      <div class="form">
+        <div class="grid">
+          <div class="field"><label>NAME</label><input value="FOCACCIA DO ANDRE"></div>
+          <div class="field"><label>CATEGORY</label><select><option>DOUGHS</option></select></div>
+          <div class="field"><label>TYPE</label><select><option>SIMPLE</option></select></div>
+          <div class="field"><label>FAVORITE</label><select><option>YES</option></select></div>
+        </div>
+        <div class="field"><label>TOTAL G</label><input value="700.3"></div>
+        <h3>INGREDIENTS</h3>
+        <div class="row"><input value="WATER"><input value="293.0"><button>X</button></div>
+        <div class="row"><input value="OLIVE OIL"><input value="20.0"><button>X</button></div>
+        <div class="row"><input value="WHEAT FLOUR"><input value="366.0"><button>X</button></div>
+        <div class="row"><input value="SALT"><input value="10.0"><button>X</button></div>
+        <div class="tools"><button>SAVE RECIPE</button><button class="danger">DELETE RECIPE</button><a class="btn">DOWNLOAD TXT</a></div>
+      </div>
+      <div class="scale">
+        <div class="dim">RECALCULATE PROPORTION</div>
+        <p>Current total: <strong>700.3</strong> g</p>
+        <p>New total: <input value="1000.0"> <button>RECALCULATE</button></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="backupModal" class="modal hidden">
+    <div class="modalbox">
+      <div class="modalbar"><strong>BACKUP</strong><button>CLOSE</button></div>
+      <div class="backupChoices">
+        <a class="btn">DOWNLOAD TXT</a>
+        <a class="btn">DOWNLOAD ZIP</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="shotLabel">MISE_DECK v1.5.0 PORTAL PREVIEW</div>
+  <script>
+    const mode = new URLSearchParams(location.search).get('shot') || 'home';
+    if (mode === 'editor') document.getElementById('recipeModal').classList.remove('hidden');
+    if (mode === 'backup') document.getElementById('backupModal').classList.remove('hidden');
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
-# Feature overview
+﻿# Feature overview
 
-MiseDeck is designed as a compact kitchen utility firmware for the M5Stack Cardputer.
+Mise_Deck is designed as a compact kitchen utility firmware for the M5Stack Cardputer.
 
 ## Recipe library
 
@@ -14,7 +14,7 @@ MiseDeck is designed as a compact kitchen utility firmware for the M5Stack Cardp
 
 ## Scaling
 
-MiseDeck is built around weight-based recipe scaling.
+Mise_Deck is built around weight-based recipe scaling.
 
 You can open a recipe and change the total target weight. Ingredient weights are recalculated proportionally.
 
@@ -37,7 +37,7 @@ Example use:
 
 1. Enter several ingredient weights.
 2. Enter a new target total.
-3. MiseDeck recalculates the new weights.
+3. Mise_Deck recalculates the new weights.
 
 ## Timer
 
@@ -65,7 +65,7 @@ System sound options:
 
 ## Battery
 
-MiseDeck shows a simple battery percentage indicator on screen and includes a battery screen with:
+Mise_Deck shows a simple battery percentage indicator on screen and includes a battery screen with:
 
 - Percentage
 - Voltage
@@ -73,7 +73,7 @@ MiseDeck shows a simple battery percentage indicator on screen and includes a ba
 
 ## Wi-Fi portal
 
-When connected to Wi-Fi, MiseDeck starts a local portal:
+When connected to Wi-Fi, Mise_Deck starts a local portal:
 
 ```text
 misedeck.local
@@ -93,19 +93,14 @@ Portal features:
 - Download TXT
 - Download backup
 
-## Offline QR sharing
+## Offline sharing
 
-Recipes can be shared without Wi-Fi using a QR Code summary:
+Recipes can be shared without using your home Wi-Fi:
 
 ```text
 Recipe > Actions > Share
 ```
 
-The QR contains a compact text summary:
+The Cardputer starts a local sharing flow so a phone can open a recipe page with copy/download options.
 
-```text
-RECIPE NAME
-TOTAL:1300.0g
-INGREDIENT 1 100.0g-INGREDIENT 2 200.0g
-```
 

@@ -1,6 +1,6 @@
-# Roadmap
+﻿# Roadmap
 
-MiseDeck should stay focused, fast, useful on the Cardputer, and a little weird in the best cyberdeck way.
+Mise_Deck should stay focused, fast, useful on the Cardputer, and a little weird in the best cyberdeck way.
 
 ## v1.0.0
 
@@ -17,7 +17,7 @@ First public release candidate.
 - Local browser portal
 - Mobile-friendly portal layout
 - Offline QR recipe sharing
-- About screen and easter egg
+- About screen
 
 ## v1.1 ideas
 
@@ -44,7 +44,7 @@ First public release candidate.
 
 ## Philosophy
 
-MiseDeck should remain:
+Mise_Deck should remain:
 
 - offline-first;
 - SD-card friendly;
@@ -52,3 +52,5 @@ MiseDeck should remain:
 - fast during real kitchen use;
 - open and hackable;
 - slightly strange, charming, and cyberdeck-flavored.
+
+

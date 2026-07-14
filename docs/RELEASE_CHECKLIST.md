@@ -1,9 +1,9 @@
-# v1.0.0 release checklist
+﻿# v1.5.0 release checklist
 
 ## Firmware
 
-- [x] Decide initial v1.0.0 firmware language: English first, PT-BR build/language selector planned next
-- [x] Change `FW_VERSION` to `v1.0.0`
+- [x] Align English and PT-BR builds under `v1.5.0`
+- [x] Change `FW_VERSION` to `v1.5.0`
 - [x] Compile final firmware
 - [ ] Flash and test on real Cardputer
 - [x] Test SD recipe save/load
@@ -11,7 +11,6 @@
 - [ ] Test browser portal on desktop
 - [x] Test browser portal on phone
 - [x] Test QR offline sharing
-- [ ] Test Portal cake easter egg
 - [x] Export final `.bin`
 
 ## Repository
@@ -38,7 +37,7 @@ README.pt-BR.md
 CHANGELOG.md
 LICENSE
 platformio.ini
-MiseDeck_Cardputer_v11.ino
+Mise_Deck_Cardputer_v11.ino
 chef_splash.h
 assets/
 src/
@@ -58,4 +57,6 @@ Avoid publishing:
 
 ## License decision
 
-MiseDeck uses the MIT License.
+Mise_Deck uses the MIT License.
+
+

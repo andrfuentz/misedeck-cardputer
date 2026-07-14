@@ -1,6 +1,6 @@
-# Local web portal
+﻿# Local web portal
 
-MiseDeck includes a local web portal served directly by the Cardputer.
+Mise_Deck includes a local web portal served directly by the Cardputer.
 
 ## Access
 
@@ -35,7 +35,7 @@ The portal is designed to work on phones:
 
 ## Recipe editor
 
-MiseDeck uses a simple TXT format.
+Mise_Deck uses a simple TXT format.
 
 Example:
 
@@ -69,3 +69,5 @@ Use `SYNC` after:
 - The portal works only on the same local network.
 - It is not an internet cloud service.
 - `misedeck.local` depends on mDNS support; IP address is more reliable.
+
+

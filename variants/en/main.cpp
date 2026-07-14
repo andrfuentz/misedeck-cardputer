@@ -1,16 +1,17 @@
-#include <M5Cardputer.h>
+﻿#include <M5Cardputer.h>
 #include <M5Unified.h>
 #include <SD.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <vector>
 #include <lgfx/utility/lgfx_qrcode.h>
 #include "chef_splash.h"
 
-#define FW_VERSION "v1.0.0"
+#define FW_VERSION "v1.5.0"
 #define RECIPE_DIR "/RECIPES"
 #define IMPORT_DIR "/IMPORT"
 #define BACKUP_FILE "/MISEDECK_BACKUP.txt"
@@ -33,11 +34,20 @@ bool sdOK = false;
 bool soundOn = true;
 int soundVolume = 6;
 WebServer webServer(80);
+DNSServer dnsServer;
 Preferences prefs;
 bool webStarted = false;
 bool mdnsStarted = false;
+bool dnsStarted = false;
 String wifiSsid = "";
 String wifiPass = "";
+bool offlineShareActive = false;
+int offlineShareIndex = -1;
+String offlineShareSsid = "";
+const IPAddress OFFLINE_SHARE_IP(192, 168, 4, 1);
+const IPAddress OFFLINE_SHARE_GW(192, 168, 4, 1);
+const IPAddress OFFLINE_SHARE_MASK(255, 255, 255, 0);
+const byte DNS_PORT = 53;
 
 int batteryPct = -1;
 int batteryMv = -1;
@@ -68,9 +78,9 @@ struct Recipe {
 };
 
 std::vector<Recipe> recipes;
-const char* cats[] = {"FAVORITES", "MAINS", "PASTA", "SWEETS", "DRINKS", "SAUCES", "OTHER"};
+const char* cats[] = {"FAVORITES", "MAINS", "DOUGHS", "SWEETS", "DRINKS", "SAUCES", "OTHER"};
 const int CAT_COUNT = 7;
-const char* realCats[] = {"MAINS", "PASTA", "SWEETS", "DRINKS", "SAUCES", "OTHER"};
+const char* realCats[] = {"MAINS", "DOUGHS", "SWEETS", "DRINKS", "SAUCES", "OTHER"};
 const int REAL_CAT_COUNT = 6;
 
 String currentCategory = "FAVORITES";
@@ -265,11 +275,12 @@ void beepErr() { toneMs(240, 70); delay(55); toneMs(180, 80); }
 void beepRecipe() { toneMs(880, 55); delay(60); toneMs(1175, 60); delay(65); toneMs(1568, 85); }
 void beepWifiOK() { toneMs(660, 45); delay(50); toneMs(990, 45); delay(50); toneMs(1320, 70); }
 void beepWifiErr() { toneMs(330, 70); delay(65); toneMs(220, 90); }
-static const uint16_t OPENING_NOTES[] = {1568, 440, 466, 784, 220, 233};
-static const uint16_t OPENING_DURATIONS[] = {610, 610, 1220, 610, 610, 1220};
-static const uint16_t OPENING_NOTE_GAP_MS = 20;
-static const uint8_t OPENING_VOLUME = 96;
-static const uint8_t OPENING_REPEATS = 2;
+// Original flute-call style opening: quick, high, airy, and generated directly by frequency.
+static const uint16_t OPENING_NOTES[] = {1047, 1397, 1865, 1760, 1175, 1760, 1661, 2093, 2217, 1760, 2093, 2349};
+static const uint16_t OPENING_DURATIONS[] = {90, 90, 115, 150, 90, 105, 120, 150, 95, 115, 145, 260};
+static const uint16_t OPENING_NOTE_GAP_MS = 18;
+static const uint8_t OPENING_VOLUME = 112;
+static const uint8_t OPENING_REPEATS = 1;
 
 bool waitWithBootCancel(uint16_t ms) {
   unsigned long start = millis();
@@ -596,22 +607,27 @@ bool buildQrCode(QRCode &qr, uint8_t *buf, String text) {
   return false;
 }
 
+void startOfflineShare();
+void stopOfflineShare(bool wifiOff=true);
+
 void uiShareQr() {
-  if (recipeIndex < 0 || recipeIndex >= (int)recipes.size()) { uiPanel("SHARE", "INVALID RECIPE", "` BACK", 1); return; }
-  Recipe &r = recipes[recipeIndex];
-  String payload = shareCardText(r);
+  if (recipeIndex < 0 || recipeIndex >= (int)recipes.size()) { uiPanel("OFFLINE SHARE", "INVALID RECIPE", "` BACK", 1); return; }
+  if (!offlineShareActive || offlineShareIndex != recipeIndex) startOfflineShare();
+  String wifiQr = "WIFI:T:nopass;S:" + offlineShareSsid + ";;";
   QRCode qr;
   static uint8_t qrbuff[1024];
-  if (!buildQrCode(qr, qrbuff, payload)) {
-    uiPanel("SHARE", "RECIPE TOO LARGE\nFOR SUMMARY QR.", "` BACK", 1);
+  if (!offlineShareActive || !buildQrCode(qr, qrbuff, wifiQr)) {
+    uiPanel("OFFLINE SHARE", "HOTSPOT FAILED\nTRY AGAIN.", "` BACK", 1);
     return;
   }
   M5Cardputer.Display.fillScreen(BG);
   int quiet = 4;
-  int scale = 2;
+  int modules = qr.size + quiet*2;
+  int scale = min(sw() / modules, (sh() - 12) / modules);
+  if (scale < 1) scale = 1;
   int qrPix = (qr.size + quiet*2) * scale;
   int x0 = max(0, (sw() - qrPix) / 2);
-  int y0 = max(0, (sh() - qrPix - 12) / 2);
+  int y0 = max(0, (sh() - 12 - qrPix) / 2);
   M5Cardputer.Display.fillRect(x0, y0, qrPix, qrPix, 0xFFFF);
   for (int y=0; y<qr.size; y++) {
     for (int x=0; x<qr.size; x++) {
@@ -621,7 +637,7 @@ void uiShareQr() {
     }
   }
   uiText(1, AMBER_DIM, BG);
-  String back = "` BACK";
+  String back = "` STOP";
   M5Cardputer.Display.setCursor(sw() - 6 - back.length()*6, sh()-11);
   M5Cardputer.Display.print(back);
 }
@@ -661,7 +677,7 @@ Recipe txtToRecipe(String txt) {
     else if (k=="CATEGORY" || k=="CATEGORIA") {
       r.category=cleanName(v);
       if (r.category=="PRATOS") r.category="MAINS";
-      else if (r.category=="MASSAS") r.category="PASTA";
+      else if (r.category=="MASSAS" || r.category=="PASTA") r.category="DOUGHS";
       else if (r.category=="DOCES") r.category="SWEETS";
       else if (r.category=="BEBIDAS") r.category="DRINKS";
       else if (r.category=="MOLHOS") r.category="SAUCES";
@@ -750,7 +766,7 @@ void loadRecipes() {
 }
 void seedDemoIfEmpty() {
   if (recipes.size()) return;
-  Recipe a; a.id="focaccia-andre"; a.name="FOCACCIA DO ANDRE"; a.category="PASTA"; a.favorite=true;
+  Recipe a; a.id="focaccia-andre"; a.name="FOCACCIA DO ANDRE"; a.category="DOUGHS"; a.favorite=true;
   a.ingredients.push_back({"WATER",293});
   a.ingredients.push_back({"SUGAR",8});
   a.ingredients.push_back({"OLIVE OIL",20});
@@ -812,6 +828,46 @@ bool unlockPortalCake() {
   flash("THE CAKE IS REAL");
   return true;
 }
+Recipe shokupanRecipe() {
+  Recipe r;
+  r.id = "shokupan-andre";
+  r.name = "SHOKUPAN";
+  r.category = "DOUGHS";
+  r.favorite = true;
+  r.composite = true;
+  Prep dough; dough.name = "DOUGH";
+  dough.ingredients.push_back({"WHEAT FLOUR",320});
+  dough.ingredients.push_back({"YEAST",9});
+  dough.ingredients.push_back({"SALT",3});
+  dough.ingredients.push_back({"MILK",120});
+  dough.ingredients.push_back({"SUGAR",56});
+  dough.ingredients.push_back({"BUTTER",42});
+  dough.ingredients.push_back({"EGG",50});
+  Prep tangzhong; tangzhong.name = "TANGZHONG";
+  tangzhong.ingredients.push_back({"WHEAT FLOUR",20});
+  tangzhong.ingredients.push_back({"WATER",27});
+  tangzhong.ingredients.push_back({"MILK",40});
+  r.preps.push_back(dough);
+  r.preps.push_back(tangzhong);
+  recalc(r);
+  return r;
+}
+bool unlockShokupan() {
+  // Original: ãŠã¯ã‚ˆã†ã”ã–ã„ã¾ã™ã€ãƒ‘ãƒ³å±‹ã•ã‚“!
+  // The Cardputer default display font does not render Japanese glyphs reliably.
+  const char* msg = "OHAYOU, PAN-YA SAN!";
+  if (hasRecipeId("shokupan-andre")) {
+    flash(msg);
+    return false;
+  }
+  Recipe r = shokupanRecipe();
+  recipes.push_back(r);
+  recipeIndex = recipes.size() - 1;
+  saveRecipe(recipes[recipeIndex]);
+  beepRecipe();
+  flash(msg);
+  return true;
+}
 
 std::vector<int> recipeIndicesFor(String cat) {
   std::vector<int> idx;
@@ -866,6 +922,33 @@ void drawCenteredWrapped(String s, int y, int size, uint16_t color=AMBER) {
   if (cut < 0) cut = mid;
   drawCenteredText(s.substring(0, cut), y, size, color);
   drawCenteredText(s.substring(cut + 1), y + 12 * size, size, color);
+}
+void drawFocusOverview(String title, String meta, String name, String weight, int idx, int total, String foot) {
+  uiFrame(title, foot);
+  uiText(1, AMBER_DIM, BG);
+  M5Cardputer.Display.setCursor(6, 21);
+  M5Cardputer.Display.print(clipText(meta, 25));
+  String pos = total > 0 ? String(idx + 1) + "/" + String(total) : "0/0";
+  M5Cardputer.Display.setCursor(sw() - 6 - pos.length() * 6, 21);
+  M5Cardputer.Display.print(pos);
+
+  if (total <= 0) {
+    drawCenteredText("NO ITEMS", 58, 2, AMBER);
+    return;
+  }
+
+  name.toUpperCase();
+  int maxChars = 18;
+  String line1 = clipText(name, maxChars);
+  String line2 = "";
+  if ((int)name.length() > maxChars) line2 = clipText(name.substring(maxChars), maxChars);
+  drawCenteredText(line1, line2.length() ? 43 : 51, 2, AMBER);
+  if (line2.length()) drawCenteredText(line2, 67, 2, AMBER);
+
+  uiText(3, AMBER, BG);
+  int x = max(0, (sw() - (int)weight.length() * 18) / 2);
+  M5Cardputer.Display.setCursor(x, 91);
+  M5Cardputer.Display.print(weight);
 }
 void drawBootScreen(String title, String slogan, bool cursorOn=false) {
   M5Cardputer.Display.fillScreen(BG);
@@ -924,7 +1007,7 @@ bool bootPause(int ms, unsigned long &lastNote, int &noteStep) {
   return false;
 }
 void showBoot() {
-  String title = "MiseDeck";
+  String title = "Mise_Deck";
   String slogan = "\"A pocket mise en place for the Cardputer\"";
   randomSeed(millis() + batteryMv + recipes.size());
   unsigned long bootNoteLast = 0;
@@ -960,7 +1043,7 @@ void showBoot() {
   return;
 #if 0
   String lines[] = {
-    "MISEDECK BOOT\n--------------------\n",
+    "MISE_DECK BOOT\n--------------------\n",
     "INIT DISPLAY....OK\n",
     "MAP TECLADO.....OK\n",
     "MOUNT SD CARD...OK\n",
@@ -968,7 +1051,7 @@ void showBoot() {
   };
   String acc="";
   for (int i=0;i<5;i++) { acc += lines[i]; drawText(acc); bootDelay(i==0?700:850); if (state==ST_MAIN) return; }
-  String g1[] = {"%$#@!_SYS_BOOT\nC¥B3R_CH3F_ERR\nREADY_//_OK", "@#!_CORE_STREAM\nSYS//HANDOFF_\nC4RD//CHEF", "NOISE_MAP_OK\n%$READY$%\n"};
+  String g1[] = {"%$#@!_SYS_BOOT\nCÂ¥B3R_CH3F_ERR\nREADY_//_OK", "@#!_CORE_STREAM\nSYS//HANDOFF_\nC4RD//CHEF", "NOISE_MAP_OK\n%$READY$%\n"};
   for (int i=0;i<3;i++) { drawText(g1[i]); bootDelay(160); if (state==ST_MAIN) return; }
   M5Cardputer.Display.fillScreen(BG);
   M5Cardputer.Display.drawPng(CHEF_SPLASH_PNG, CHEF_SPLASH_PNG_SIZE, 0, 0);
@@ -978,7 +1061,7 @@ void showBoot() {
   String typed="";
   for (int i=0;i<=slogan.length();i++) {
     typed = slogan.substring(0,i);
-    drawText(" [ MISEDECK " + String(FW_VERSION) + " ]\n--------------------\n" + typed + "_\n--------------------");
+    drawText(" [ MISE_DECK " + String(FW_VERSION) + " ]\n--------------------\n" + typed + "_\n--------------------");
     bootDelay(58);
     if (state==ST_MAIN) return;
   }
@@ -1008,8 +1091,8 @@ KeyEvent readKey() {
       else if (c==',' || c=='/' || c=='.') e.right=true;
     } else {
       if (c=='`' || c==27) e.back=true;
-      else if (editing && !wifiTyping && (c==',' || c=='<' || c=='J')) e.left=true;
-      else if (editing && !wifiTyping && (c=='/' || c=='?' || c=='L')) e.right=true;
+      else if (editing && !wifiTyping && (c==',' || c=='<')) e.left=true;
+      else if (editing && !wifiTyping && (c=='/' || c=='?')) e.right=true;
       else if (!editing && !wifiTyping && (c==';' || c==':' || c=='I' || c=='W')) e.up=true;
       else if (!editing && !wifiTyping && (c=='.' || c=='>' || c=='K' || c=='S')) e.down=true;
       else if (!editing && !wifiTyping && (c==',' || c=='<' || c=='J' || c=='A')) e.left=true;
@@ -1037,6 +1120,17 @@ void nav(const KeyEvent& e, int total, void (*onEnter)(), State backState) {
   if (moved) { beepNav(); render(); }
   if (enterNow && onEnter) { toneMs(1040, 18); onEnter(); }
 }
+void focusMove(int delta, int total) {
+  if (total <= 0) { beepBack(); return; }
+  int idx = gi() + delta;
+  if (idx < 0) idx = 0;
+  if (idx >= total) idx = total - 1;
+  if (idx == gi()) { beepBack(); return; }
+  page = idx / MAX_VISIBLE;
+  selected = idx % MAX_VISIBLE;
+  beepNav();
+  render();
+}
 
 void renderMessageIfAny() {
   if (messageUntil && millis() < messageUntil) { drawText(header("SYSTEM") + "\n" + messageText); }
@@ -1051,7 +1145,7 @@ void render() {
   messageUntil = 0;
   String out;
   switch(state) {
-    case ST_MAIN: uiMenu("MISEDECK " + String(FW_VERSION), {"RECIPES","TOOLS","WIFI","SYSTEM"}, ";/ . MOVE  / ENTER  OK ENTER"); return;
+    case ST_MAIN: uiMenu("MISE_DECK " + String(FW_VERSION), {"RECIPES","TOOLS","WIFI","SYSTEM"}, ";/ . MOVE  / ENTER  OK ENTER"); return;
     case ST_RECIPES: uiMenu("RECIPES", {"FAVORITES","LIBRARY","NEW","QUICK"}); return;
     case ST_CATEGORIES: {
       std::vector<String> it; for(int i=0;i<CAT_COUNT;i++) it.push_back(cats[i]);
@@ -1065,59 +1159,34 @@ void render() {
     }
     case ST_RECIPE_VIEW: {
       Recipe &r=recipes[recipeIndex];
-      uiFrame(String(r.favorite?"* ":"") + r.name, r.composite ? "OK PREP  / PREP  O ACTIONS  ` BACK" : "OK ACTIONS  TAB FAV  ` BACK");
-      uiText(2, AMBER, BG);
-      M5Cardputer.Display.setCursor(6, 22);
-      M5Cardputer.Display.print("TOTAL " + fw(r.total));
-      std::vector<String> rows;
       if (r.composite) {
-        int start=page*MAX_VISIBLE;
-        for(int i=0;i<MAX_VISIBLE && start+i<(int)r.preps.size();i++) {
-          Prep &p = r.preps[start+i];
-          int y=52+i*20;
-          bool sel=(i==selected);
-          if(sel) M5Cardputer.Display.fillRect(4, y-3, sw()-8, 18, AMBER_DARK);
-          uiText(1, AMBER, sel ? AMBER_DARK : BG);
-          M5Cardputer.Display.setCursor(8, y);
-          M5Cardputer.Display.print(clipText(p.name, 20) + "  " + fw(p.total));
-        }
+        int total = r.preps.size();
+        int idx = total ? min(gi(), total - 1) : 0;
+        if (total) { page = idx / MAX_VISIBLE; selected = idx % MAX_VISIBLE; }
+        String name = total ? r.preps[idx].name : "NO PREPS";
+        String weight = total ? fw(r.preps[idx].total) : "--";
+        drawFocusOverview(String(r.favorite?"* ":"") + r.name, "TOTAL " + fw(r.total), name, weight, idx, total, ";/ . PREP  OK OPEN  SPC ACTIONS  ` BACK");
       } else {
         float base=sumIngredients(r.ingredients); if(base<=0)base=1;
-        int start=page*MAX_VISIBLE;
-        for(int i=0;i<MAX_VISIBLE && start+i<(int)r.ingredients.size();i++) {
-          auto &ing=r.ingredients[start+i];
-          int y=52+i*20;
-          uiText(1, AMBER, BG);
-          M5Cardputer.Display.setCursor(8, y);
-          M5Cardputer.Display.print(clipText(ing.name, 15));
-          M5Cardputer.Display.setCursor(118, y);
-          M5Cardputer.Display.print(fw(ing.weight*r.total/base));
-          M5Cardputer.Display.setCursor(190, y);
-          M5Cardputer.Display.print(String((int)round(ing.weight/base*100)) + "%");
-        }
+        int total = r.ingredients.size();
+        int idx = total ? min(gi(), total - 1) : 0;
+        if (total) { page = idx / MAX_VISIBLE; selected = idx % MAX_VISIBLE; }
+        String name = total ? r.ingredients[idx].name : "NO INGREDIENTS";
+        String weight = total ? fw(r.ingredients[idx].weight*r.total/base) : "--";
+        drawFocusOverview(String(r.favorite?"* ":"") + r.name, "TOTAL " + fw(r.total), name, weight, idx, total, ";/ . ITEM  OK ACTIONS  TAB FAV  ` BACK");
       }
       return;
     }
     case ST_SHARE_QR: uiShareQr(); return;
     case ST_PREP_VIEW: {
       Recipe &r=recipes[recipeIndex]; Prep &p=r.preps[prepIndex];
-      uiFrame(p.name, "OK ACTIONS  ` BACK");
-      uiText(2, AMBER, BG);
-      M5Cardputer.Display.setCursor(6, 22);
-      M5Cardputer.Display.print("TOTAL " + fw(p.total));
       float base=sumIngredients(p.ingredients); if(base<=0)base=1;
-      int start=page*MAX_VISIBLE;
-      for(int i=0;i<MAX_VISIBLE && start+i<(int)p.ingredients.size();i++) {
-        auto &ing=p.ingredients[start+i];
-        int y=52+i*20;
-        uiText(1, AMBER, BG);
-        M5Cardputer.Display.setCursor(8, y);
-        M5Cardputer.Display.print(clipText(ing.name, 15));
-        M5Cardputer.Display.setCursor(118, y);
-        M5Cardputer.Display.print(fw(ing.weight*p.total/base));
-        M5Cardputer.Display.setCursor(190, y);
-        M5Cardputer.Display.print(String((int)round(ing.weight/base*100)) + "%");
-      }
+      int total = p.ingredients.size();
+      int idx = total ? min(gi(), total - 1) : 0;
+      if (total) { page = idx / MAX_VISIBLE; selected = idx % MAX_VISIBLE; }
+      String name = total ? p.ingredients[idx].name : "NO INGREDIENTS";
+      String weight = total ? fw(p.ingredients[idx].weight*p.total/base) : "--";
+      drawFocusOverview(p.name, "PREP TOTAL " + fw(p.total), name, weight, idx, total, ";/ . ITEM  OK ACTIONS  ` BACK");
       return;
     }
     case ST_ACTIONS: {
@@ -1221,7 +1290,7 @@ void render() {
     case ST_BATTERY: uiBatteryScreen(); return;
     case ST_ABOUT: {
       uiFrame("ABOUT", "` BACK");
-      drawCenteredText("MISEDECK", 22, 1, AMBER);
+      drawCenteredText("MISE_DECK", 22, 1, AMBER);
       drawCenteredText("Concept: Andre Fuentes", 38, 1, AMBER);
       drawCenteredText("@anfuentz", 50, 1, AMBER_DIM);
       drawCenteredText("Vibecoded by Codex", 66, 1, AMBER);
@@ -1416,6 +1485,48 @@ String backupTxt() {
   for(auto &r:recipes){ out += recipeToTxt(r); out += "\n====================\n"; }
   return out;
 }
+uint32_t crc32Text(const String& s) {
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i=0; i<s.length(); i++) {
+    crc ^= (uint8_t)s[i];
+    for (int b=0; b<8; b++) crc = (crc >> 1) ^ (0xEDB88320UL & (-(int32_t)(crc & 1)));
+  }
+  return ~crc;
+}
+void zipWrite16(WiFiClient &c, uint16_t v) { uint8_t b[2]={(uint8_t)(v&255),(uint8_t)(v>>8)}; c.write(b,2); }
+void zipWrite32(WiFiClient &c, uint32_t v) { uint8_t b[4]={(uint8_t)(v&255),(uint8_t)((v>>8)&255),(uint8_t)((v>>16)&255),(uint8_t)((v>>24)&255)}; c.write(b,4); }
+void sendBackupZip() {
+  struct ZipEntry { String name; String txt; uint32_t crc; uint32_t offset; };
+  std::vector<ZipEntry> entries;
+  for (auto &r:recipes) {
+    ZipEntry e; e.name=fileSafeName(r.name); e.txt=recipeToTxt(r); e.crc=crc32Text(e.txt); e.offset=0; entries.push_back(e);
+  }
+  uint32_t totalSize=0, centralSize=0;
+  for (auto &e:entries) { totalSize += 30 + e.name.length() + e.txt.length(); centralSize += 46 + e.name.length(); }
+  totalSize += centralSize + 22;
+  webServer.setContentLength(totalSize);
+  webServer.sendHeader("Content-Disposition", "attachment; filename=\"Mise_Deck_Recipes.zip\"");
+  webServer.send(200, "application/zip", "");
+  WiFiClient c = webServer.client();
+  uint32_t offset=0;
+  for (auto &e:entries) {
+    e.offset=offset;
+    zipWrite32(c,0x04034b50); zipWrite16(c,20); zipWrite16(c,0); zipWrite16(c,0); zipWrite16(c,0); zipWrite16(c,0);
+    zipWrite32(c,e.crc); zipWrite32(c,e.txt.length()); zipWrite32(c,e.txt.length()); zipWrite16(c,e.name.length()); zipWrite16(c,0);
+    c.write((const uint8_t*)e.name.c_str(), e.name.length()); c.write((const uint8_t*)e.txt.c_str(), e.txt.length());
+    offset += 30 + e.name.length() + e.txt.length();
+  }
+  uint32_t centralStart=offset;
+  for (auto &e:entries) {
+    zipWrite32(c,0x02014b50); zipWrite16(c,20); zipWrite16(c,20); zipWrite16(c,0); zipWrite16(c,0); zipWrite16(c,0); zipWrite16(c,0);
+    zipWrite32(c,e.crc); zipWrite32(c,e.txt.length()); zipWrite32(c,e.txt.length()); zipWrite16(c,e.name.length()); zipWrite16(c,0); zipWrite16(c,0);
+    zipWrite16(c,0); zipWrite16(c,0); zipWrite32(c,0); zipWrite32(c,e.offset);
+    c.write((const uint8_t*)e.name.c_str(), e.name.length());
+    offset += 46 + e.name.length();
+  }
+  zipWrite32(c,0x06054b50); zipWrite16(c,0); zipWrite16(c,0); zipWrite16(c,entries.size()); zipWrite16(c,entries.size());
+  zipWrite32(c,centralSize); zipWrite32(c,centralStart); zipWrite16(c,0);
+}
 bool validRecipeTxt(String txt) {
   txt.trim();
   return txt.length() > 0 && txt.indexOf('|') >= 0 && (txt.indexOf("[INGREDIENTS]") >= 0 || txt.indexOf("[PREP]") >= 0 || txt.indexOf("[INGREDIENTES]") >= 0 || txt.indexOf("[PREPARO]") >= 0);
@@ -1424,29 +1535,52 @@ String recipeCard(int idx) {
   Recipe &r=recipes[idx];
   String txt=htmlEscape(recipeToTxt(r));
   String card="<article class='recipe' data-id='"+String(idx)+"'>";
-  card += "<div><h3>" + htmlEscape(String(r.favorite?"★ ":"") + r.name) + "</h3>";
+  card += "<div><h3>" + htmlEscape(String(r.favorite?"â˜… ":"") + r.name) + "</h3>";
   card += "<p class='dim'>" + htmlEscape(r.category) + " // " + String(r.composite?"COMPOSITE":"SIMPLE") + " // TOTAL " + fw(r.total) + "</p></div>";
   card += "<div class='actions'><button onclick='openRecipe("+String(idx)+")'>OPEN</button><a class='btn' href='/txt?id="+String(idx)+"'>DOWNLOAD TXT</a></div>";
   card += "<pre id='txt"+String(idx)+"' class='hidden'>" + txt + "</pre></article>";
   return card;
 }
+String offlineShareHtml() {
+  if (offlineShareIndex < 0 || offlineShareIndex >= (int)recipes.size()) {
+    return "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Mise_Deck Share</title></head><body>Recipe not found</body></html>";
+  }
+  Recipe &r = recipes[offlineShareIndex];
+  String txt = recipeToTxt(r);
+  String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<title>Mise_Deck Share</title><style>";
+  html += ":root{--bg:#050300;--panel:#120900;--amber:#ffb000;--dim:#9b6a20;--line:#5d3a00;--hot:#ffd36a}";
+  html += "*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#1b0d00 0,#050300 45%,#000 100%);color:var(--amber);font-family:ui-monospace,Consolas,monospace;-webkit-text-size-adjust:100%}";
+  html += ".wrap{max-width:820px;margin:auto;padding:18px}header{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}h1{margin:0;color:var(--hot);font-size:clamp(26px,7vw,44px);text-shadow:0 0 10px #ff8c00}h2{margin:8px 0 0;font-size:clamp(20px,5vw,30px)}";
+  html += ".dim{color:var(--dim)}.meta{border:1px solid var(--line);background:rgba(18,9,0,.92);padding:12px;margin:12px 0;line-height:1.55}.tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}";
+  html += "button,.btn{border:1px solid var(--amber);background:#1b0d00;color:var(--hot);padding:13px;text-decoration:none;font:inherit;text-align:center;cursor:pointer}.btn:hover,button:hover{background:var(--amber);color:#000}";
+  html += "pre{white-space:pre-wrap;line-height:1.55;color:#ffd36a;font-size:clamp(16px,4.5vw,20px);border:1px solid var(--line);background:rgba(18,9,0,.92);padding:14px;overflow:auto}";
+  html += ".note{font-size:13px;color:var(--dim);line-height:1.4}@media(max-width:560px){.wrap{padding:14px}.tools{grid-template-columns:1fr}button,.btn{font-size:17px}pre{padding:12px}}";
+  html += "</style></head><body><div class='wrap'><header><div class='dim'>MISE_DECK OFFLINE SHARE</div><h1>" + htmlEscape(r.name) + "</h1>";
+  html += "<div class='meta'>CATEGORY: " + htmlEscape(r.category) + "<br>TYPE: " + String(r.composite ? "COMPOSITE" : "SIMPLE") + "<br>TOTAL: " + fw(r.total) + " g</div></header>";
+  html += "<div class='tools'><button onclick='copyRecipe()'>COPY TEXT</button><a class='btn' href='/txt'>DOWNLOAD TXT</a></div>";
+  html += "<pre id='recipeTxt'>" + htmlEscape(txt) + "</pre><p class='note'>This page opened from the Mise_Deck hotspot. No internet required. If the captive window closes, reconnect to " + htmlEscape(offlineShareSsid) + " and open http://192.168.4.1</p></div>";
+  html += "<script>function copyRecipe(){let t=document.getElementById('recipeTxt').textContent;if(navigator.clipboard){navigator.clipboard.writeText(t).then(()=>alert('Recipe copied.')).catch(()=>fallback(t));}else fallback(t);}function fallback(t){let a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();alert('Recipe copied.');}</script>";
+  html += "</body></html>";
+  return html;
+}
 String portalHtml() {
   String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>MiseDeck</title><style>";
+  html += "<title>Mise_Deck</title><style>";
   html += ":root{--bg:#050300;--panel:#120900;--amber:#ffb000;--dim:#9b6a20;--line:#5d3a00;--hot:#ffd36a}";
   html += "*{box-sizing:border-box}html{font-size:16px}body{margin:0;background:radial-gradient(circle at top,#1b0d00 0,#050300 45%,#000 100%);color:var(--amber);font-family:ui-monospace,Consolas,monospace;-webkit-text-size-adjust:100%}";
   html += ".wrap{max-width:1100px;margin:auto;padding:22px}.top{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:14px}";
-  html += "h1{margin:0;letter-spacing:2px;text-shadow:0 0 9px #ff8c00;font-size:clamp(24px,5vw,42px)}.dim{color:var(--dim)}.slogan{color:var(--hot);font-size:15px;margin-top:4px}.topright{display:flex;flex-direction:column;gap:8px;align-items:flex-end}.topstatus{display:flex;gap:10px;align-items:stretch}.createbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}";
+  html += "h1{margin:0;letter-spacing:2px;text-shadow:0 0 9px #ff8c00;font-size:clamp(24px,5vw,42px);color:var(--amber)}.dim{color:var(--dim)}.slogan{display:block;color:var(--hot);font-size:15px;margin-top:4px}.topright{display:flex;flex-direction:column;gap:8px;align-items:flex-end}.topstatus{display:flex;gap:10px;align-items:stretch}.createbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}";
   html += ".status,.tab,.recipe,.modalbox{border:1px solid var(--line);background:rgba(18,9,0,.92);box-shadow:0 0 18px #3a2200}";
   html += ".status{padding:10px 12px;text-align:right}.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}.tab{color:var(--amber);padding:10px 12px;cursor:pointer;min-height:42px}.tab.active{background:var(--amber);color:#000}";
   html += ".panel{display:none}.panel.active{display:block}.recipe{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px;margin:10px 0}.recipe h3{margin:0 0 6px 0;font-size:20px}.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}";
   html += "button,.btn{border:1px solid var(--amber);background:#1b0d00;color:var(--hot);padding:10px 13px;text-decoration:none;font:inherit;cursor:pointer;min-height:42px;border-radius:0}button:hover,.btn:hover{background:var(--amber);color:#000}.create{border-width:2px;background:#2a1200;color:#ffd36a;box-shadow:0 0 14px #5d3a00}.syncTop{min-width:86px;background:var(--amber);color:#000;font-weight:bold}.backupFoot{margin:28px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-align:right}";
-  html += ".empty{border:1px dashed var(--line);padding:18px;color:var(--dim)}.hidden{display:none}.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);padding:18px}.modal.on{display:flex}.modalbox{width:min(920px,100%);max-height:92vh;margin:auto;padding:18px;overflow:auto}";
+  html += ".empty{border:1px dashed var(--line);padding:18px;color:var(--dim)}.hidden{display:none}.modal{display:none;position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.78);padding:18px}.modal.on{display:flex}.modalbox{width:min(920px,100%);max-height:92vh;margin:auto;padding:18px;overflow:auto}";
   html += ".modalbar{display:flex;justify-content:space-between;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px}#mtitle{font-size:22px;text-shadow:0 0 8px #ff8c00}pre{white-space:pre-wrap;line-height:1.45;color:#ffd36a;font-size:17px}";
   html += ".scale{border:1px solid var(--line);padding:12px;margin:12px 0;background:#0b0500}.scale input{background:#050300;border:1px solid var(--amber);color:var(--hot);padding:9px;font:inherit;width:150px}.calc{margin-top:12px}.calc table{width:100%;border-collapse:collapse}.calc td,.calc th{border-bottom:1px solid var(--line);padding:7px;text-align:left}.calc h4{margin:14px 0 6px}";
-  html += ".editor{display:none;border:1px solid var(--line);padding:12px;margin:12px 0;background:#070300}.editor.on{display:block}.editor textarea{width:100%;min-height:330px;background:#020100;color:var(--hot);border:1px solid var(--amber);font:14px ui-monospace,Consolas,monospace;padding:10px}.tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}";
-  html += "@media(max-width:650px){html{font-size:18px}.wrap{padding:14px}.top,.recipe,.topright,.topstatus{display:block}.topright{align-items:stretch}.slogan{font-size:14px;line-height:1.35}.status{text-align:left;margin-top:8px;font-size:13px}.syncTop{width:100%;margin-top:8px}.createbar{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}.createbar button,.syncTop{font-size:16px;padding:13px}.tabs{position:sticky;top:0;z-index:5;background:rgba(5,3,0,.96);margin:12px -14px 14px;padding:10px 14px;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}.tab{flex:0 0 auto;padding:12px 14px;font-size:15px}.panel h2{font-size:20px;margin:12px 0}.recipe{padding:15px;margin:12px 0}.recipe h3{font-size:22px;line-height:1.2}.recipe .dim{font-size:14px;line-height:1.35}.actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.actions button,.actions .btn,.tools button,.tools .btn{width:100%;text-align:center;padding:13px}.modal{padding:0;align-items:stretch}.modalbox{width:100%;height:100vh;max-height:none;margin:0;border:0;padding:14px}.modalbar{position:sticky;top:0;background:#120900;z-index:6}.modalbar button{padding:12px 14px}#mtitle{font-size:20px;line-height:1.2}pre{font-size:18px;line-height:1.5;overflow:auto}.scale{padding:12px}.scale p{line-height:1.45}.scale input{width:100%;font-size:18px;margin:6px 0}.scale button{width:100%;margin-top:8px}.calc{overflow-x:auto}.calc table{min-width:440px}.editor textarea{min-height:55vh;font-size:16px;line-height:1.45}.backupFoot{text-align:center}.backupFoot .btn{display:block;width:100%}}";
-  html += "</style></head><body><div class='wrap'><header class='top'><div><h1>MISEDECK</h1><div class='slogan'><em>\"A pocket mise en place for the Cardputer\"</em></div></div>";
+  html += ".form{border:1px solid var(--line);padding:12px;margin:12px 0;background:#070300}.grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px}.field label{display:block;color:var(--dim);font-size:12px;margin-bottom:4px}.field input,.field select,.row input{width:100%;background:#020100;color:var(--hot);border:1px solid var(--amber);font:inherit;padding:9px;text-transform:uppercase}.row,.prepCard{border:1px solid var(--line);padding:10px;margin:8px 0;background:#0b0500}.row{display:grid;grid-template-columns:2fr 110px 44px;gap:8px;align-items:center}.prepCard h4{margin:0 0 8px}.danger{border-color:#ff5a36;color:#ff9a7c}.editor{display:none;border:1px solid var(--line);padding:12px;margin:12px 0;background:#070300}.editor.on{display:block}.editor textarea{width:100%;min-height:330px;background:#020100;color:var(--hot);border:1px solid var(--amber);font:14px ui-monospace,Consolas,monospace;padding:10px}.tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.backupChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}";
+  html += "@media(max-width:650px){html{font-size:18px}.wrap{padding:14px}.top,.recipe,.topright,.topstatus{display:block}.topright{align-items:stretch}.slogan{font-size:14px;line-height:1.35}.status{text-align:left;margin-top:8px;font-size:13px}.syncTop{width:100%;margin-top:8px}.createbar{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}.createbar button,.syncTop{font-size:16px;padding:13px}.tabs{position:sticky;top:0;z-index:5;background:rgba(5,3,0,.96);margin:12px -14px 14px;padding:10px 14px;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;border-bottom:1px solid var(--line)}.tab{flex:0 0 auto;padding:12px 14px;font-size:15px}.panel h2{font-size:20px;margin:12px 0}.recipe{padding:15px;margin:12px 0}.recipe h3{font-size:22px;line-height:1.2}.recipe .dim{font-size:14px;line-height:1.35}.actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.actions button,.actions .btn,.tools button,.tools .btn{width:100%;text-align:center;padding:13px}.modal{padding:0;align-items:stretch}.modalbox{width:100%;height:100vh;max-height:none;margin:0;border:0;padding:14px}.modalbar{position:sticky;top:0;background:#120900;z-index:6}.modalbar button{padding:12px 14px}#mtitle{font-size:20px;line-height:1.2}pre{font-size:18px;line-height:1.5;overflow:auto}.scale{padding:12px}.scale p{line-height:1.45}.scale input{width:100%;font-size:18px;margin:6px 0}.scale button{width:100%;margin-top:8px}.calc{overflow-x:auto}.calc table{min-width:440px}.grid,.row,.backupChoices{display:grid;grid-template-columns:1fr}.field input,.field select,.row input{font-size:18px}.editor textarea{min-height:55vh;font-size:16px;line-height:1.45}.backupFoot{text-align:center}.backupFoot button{width:100%}}";
+  html += "</style></head><body><div class='wrap'><header class='top'><div><h1 id='brandTitle'>Mise_Deck</h1><div class='slogan'><em id='brandSlogan'>\"A pocket mise en place for the Cardputer\"</em></div></div>";
   html += "<div class='topright'><div class='topstatus'><button class='syncTop' onclick='syncPortal()'>SYNC</button><div class='status'>IP " + htmlEscape(wifiIp()) + "<br>FW " + String(FW_VERSION) + "<br>" + String(recipes.size()) + " recipes</div></div>";
   html += "<div class='createbar'><button class='create' onclick='newRecipe(false)'>+ NEW SIMPLE</button><button class='create' onclick='newRecipe(true)'>+ NEW COMPOSITE</button></div></div></header>";
   html += "<nav class='tabs'>";
@@ -1466,33 +1600,60 @@ String portalHtml() {
     else for(auto i:idx) html += recipeCard(i);
     html += "</section>";
   }
-  html += "<div class='backupFoot'><a class='btn' href='/backup'>DOWNLOAD TXT BACKUP</a></div>";
+  html += "<div class='backupFoot'><button onclick='openBackup()'>BACKUP</button></div>";
+  html += "<div id='backupModal' class='modal'><div class='modalbox'><div class='modalbar'><strong>BACKUP</strong><button onclick='closeBackup()'>CLOSE</button></div><div class='backupChoices'><a class='btn' href='/backup'>DOWNLOAD TXT</a><a class='btn' href='/backup.zip'>DOWNLOAD ZIP</a></div></div></div>";
   html += "</div><div id='modal' class='modal'><div class='modalbox'><div class='modalbar'><strong id='mtitle'>RECIPE</strong><button onclick='closeRecipe()'>CLOSE</button></div>";
-  html += "<pre id='mtext'></pre>";
+  html += "<div id='guided' class='form'><div class='grid'><div class='field'><label>NAME</label><input id='fname'></div><div class='field'><label>CATEGORY</label><select id='fcat'><option>MAINS</option><option>DOUGHS</option><option>SWEETS</option><option>DRINKS</option><option>SAUCES</option><option>OTHER</option></select></div><div class='field'><label>TYPE</label><select id='ftype' onchange='typeChanged()'><option>SIMPLE</option><option>COMPOSITE</option></select></div><div class='field'><label>FAVORITE</label><select id='ffav'><option>NO</option><option>YES</option></select></div></div><div class='field'><label>TOTAL G</label><input id='ftotal' type='number' step='0.1' min='0'></div><div id='simpleBox'><h3>INGREDIENTS</h3><div id='ingRows'></div><button onclick='addIngRow()'>+ ADD INGREDIENT</button></div><div id='prepBox' class='hidden'><h3>PREPS</h3><div id='prepRows'></div><button onclick='addPrepBlock()'>+ ADD PREP</button></div><div class='tools'><button onclick='saveGuided()'>SAVE RECIPE</button><button class='danger' onclick='deleteCurrent()'>DELETE RECIPE</button><a id='mdown' class='btn' href='#'>DOWNLOAD TXT</a><button onclick='toggleTxt()'>TXT ADVANCED</button></div></div>";
+  html += "<pre id='mtext' class='hidden'></pre>";
   html += "<div class='scale'><div class='dim'>RECALCULATE PROPORTION / can save to original recipe</div><p>Current total: <strong id='baseTotal'>--</strong> g</p><p>New total: <input id='newTotal' type='number' step='0.1' min='0'> <button onclick='recalcRecipe()'>RECALCULATE</button> <button id='saveScale' onclick='saveScale()' disabled>SAVE ORIGINAL</button></p><div id='calc' class='calc'></div></div>";
-  html += "<div class='tools'><button onclick='editCurrent()'>EDIT TXT</button><a id='mdown' class='btn' href='#'>DOWNLOAD TXT</a></div>";
-  html += "<div id='editor' class='editor'><div class='dim'>SIMPLE TXT EDITOR // first line = recipe name // ingredient: NAME|WEIGHT|g</div><textarea id='editTxt'></textarea><div class='tools'><button onclick='saveEdit()'>SAVE</button><button onclick='hideEditor()'>CANCEL</button></div></div></div></div>";
+  html += "<div id='editor' class='editor'><div class='dim'>ADVANCED TXT EDITOR // ingredient: NAME|WEIGHT|g</div><textarea id='editTxt'></textarea><div class='tools'><button onclick='saveEdit()'>SAVE TXT</button><button onclick='hideEditor()'>CANCEL</button></div></div></div></div>";
   html += "<script>function showTab(n){document.querySelectorAll('.catTab').forEach((b,i)=>b.classList.toggle('active',i===n));document.querySelectorAll('.panel').forEach((p,i)=>p.classList.toggle('active',i===n));}";
   html += "function syncPortal(){location.href='/?sync='+Date.now();}";
-  html += "let currentTxt='',currentId=-1,scaleReady=false;function esc(s){return String(s).replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]));}";
-  html += "function parseRecipe(t){let r={name:'RECIPE',total:0,type:'SIMPLE',ings:[],preps:[]},p=null,seen=false;for(let raw of t.split(/\\r?\\n/)){let line=raw.trim();if(!line)continue;if(line==='MISEDECK RECIPE'||line==='CYBER CHEF RECIPE'){seen=true;continue;}if(line==='[INGREDIENTS]'||line==='[INGREDIENTES]'){p=null;seen=true;continue;}if(line==='[PREP]'||line==='[PREPARO]'){p={name:'PREP',total:0,ings:[]};r.preps.push(p);seen=true;continue;}if(line.includes('|')){let a=line.split('|');let ing={name:a[0],w:parseFloat((a[1]||'0').replace(',','.'))||0};if(p)p.ings.push(ing);else r.ings.push(ing);seen=true;continue;}let ix=line.indexOf(':');if(ix<0){if(!seen)r.name=line;seen=true;continue;}let k=line.split(':')[0],v=line.substring(ix+1).trim();if((k==='NAME'||k==='NOME')&&!p)r.name=v;if(k==='TYPE'||k==='TIPO')r.type=v;if(k==='TOTAL'){if(p)p.total=parseFloat(v.replace(',','.'))||0;else r.total=parseFloat(v.replace(',','.'))||0;}if((k==='NAME'||k==='NOME')&&p)p.name=v;seen=true;}return r;}";
-  html += "function openRecipe(id){currentId=id;scaleReady=false;currentTxt=document.getElementById('txt'+id).textContent;let r=parseRecipe(currentTxt);document.getElementById('mtext').textContent=currentTxt;document.getElementById('mdown').href='/txt?id='+id;document.getElementById('mtitle').textContent=r.name||'RECIPE';document.getElementById('baseTotal').textContent=(r.total||0).toFixed(1);document.getElementById('newTotal').value=r.total||'';document.getElementById('calc').innerHTML='';document.getElementById('saveScale').disabled=true;document.getElementById('editor').classList.remove('on');document.getElementById('modal').classList.add('on');document.querySelector('.modalbox').scrollTop=0;}";
+  html += "function openBackup(){document.getElementById('backupModal').classList.add('on');}function closeBackup(){document.getElementById('backupModal').classList.remove('on');}function capsEl(e){if(e.target&&e.target.tagName==='INPUT'&&e.target.type!=='number'){let p=e.target.selectionStart;e.target.value=e.target.value.toUpperCase();try{e.target.setSelectionRange(p,p);}catch(_){}}}document.addEventListener('input',capsEl);";
+  html += "const glyphs=' #$%&/_*+01';function scrambleText(id){let el=document.getElementById(id),base=el.dataset.base||el.textContent;el.dataset.base=base;let a=base.split('');for(let i=0;i<Math.min(3,a.length);i++){let n=Math.floor(Math.random()*a.length);if(a[n]!=' ')a[n]=glyphs[Math.floor(Math.random()*glyphs.length)];}el.textContent=a.join('');setTimeout(()=>el.textContent=base,70);}setInterval(()=>{scrambleText('brandTitle');if(Math.random()>.45)scrambleText('brandSlogan');},2300);let eggBuffer='';function isTypingTarget(el){if(!el)return false;let t=(el.tagName||'').toLowerCase();return t=='input'||t=='textarea'||t=='select'||el.isContentEditable;}document.addEventListener('keydown',e=>{if(isTypingTarget(document.activeElement))return;if(e.key=='Enter'){if(eggBuffer.trim().toLowerCase()=='the cake is real'){fetch('/portal-cake',{method:'POST'}).then(r=>r.text()).then(t=>{alert(t);load();});}eggBuffer='';return;}if(e.key.length==1){eggBuffer=(eggBuffer+e.key).slice(-32);}});";
+  html += "let currentTxt='',currentId=-1,scaleReady=false;function esc(s){return String(s).replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]));}function val(id){return document.getElementById(id).value.trim();}function num(v){return parseFloat(String(v||'0').replace(',','.'))||0;}";
+  html += "function parseRecipe(t){let r={name:'RECIPE',category:'OTHER',favorite:'NO',total:0,type:'SIMPLE',ings:[],preps:[]},p=null,seen=false;for(let raw of t.split(/\\r?\\n/)){let line=raw.trim();if(!line)continue;if(line==='MISEDECK RECIPE'||line==='CYBER CHEF RECIPE'){seen=true;continue;}if(line==='[INGREDIENTS]'||line==='[INGREDIENTES]'){p=null;seen=true;continue;}if(line==='[PREP]'||line==='[PREPARO]'){p={name:'PREP',total:0,ings:[]};r.preps.push(p);seen=true;continue;}if(line.includes('|')){let a=line.split('|');let ing={name:a[0],w:num(a[1])};if(p)p.ings.push(ing);else r.ings.push(ing);seen=true;continue;}let ix=line.indexOf(':');if(ix<0){if(!seen)r.name=line;seen=true;continue;}let k=line.split(':')[0].trim(),v=line.substring(ix+1).trim();if((k==='NAME'||k==='NOME')&&!p)r.name=v;if(k==='CATEGORY'||k==='CATEGORIA')r.category=v;if(k==='FAVORITE'||k==='FAVORITA')r.favorite=(v==='YES'||v==='SIM')?'YES':'NO';if(k==='TYPE'||k==='TIPO')r.type=(v==='COMPOSITE'||v==='COMPOSTA')?'COMPOSITE':'SIMPLE';if(k==='TOTAL'){if(p)p.total=num(v);else r.total=num(v);}if((k==='NAME'||k==='NOME')&&p)p.name=v;seen=true;}if(r.preps.length)r.type='COMPOSITE';return r;}";
+  html += "function openRecipe(id){currentId=id;scaleReady=false;currentTxt=document.getElementById('txt'+id).textContent;let r=parseRecipe(currentTxt);loadForm(r);document.getElementById('mdown').href='/txt?id='+id;document.getElementById('modal').classList.add('on');document.querySelector('.modalbox').scrollTop=0;}";
+  html += "function loadForm(r){document.getElementById('fname').value=r.name||'';document.getElementById('fcat').value=(r.category==='PASTA'?'DOUGHS':r.category)||'OTHER';document.getElementById('ffav').value=r.favorite||'NO';document.getElementById('ftype').value=r.type||'SIMPLE';document.getElementById('ftotal').value=(r.total||'');document.getElementById('mtitle').textContent=r.name||'RECIPE';document.getElementById('mtext').textContent=currentTxt;document.getElementById('baseTotal').textContent=(r.total||0).toFixed(1);document.getElementById('newTotal').value=r.total||'';document.getElementById('calc').innerHTML='';document.getElementById('saveScale').disabled=true;document.getElementById('editor').classList.remove('on');document.getElementById('ingRows').innerHTML='';document.getElementById('prepRows').innerHTML='';if(r.type==='COMPOSITE'){for(let p of r.preps)addPrepBlock(p.name,p.total,p.ings);}else{for(let i of r.ings)addIngRow(i.name,i.w);if(!r.ings.length)addIngRow();}typeChanged();}";
+  html += "function typeChanged(){let comp=document.getElementById('ftype').value==='COMPOSITE';document.getElementById('simpleBox').classList.toggle('hidden',comp);document.getElementById('prepBox').classList.toggle('hidden',!comp);}";
+  html += "function addIngRow(n='',w=''){document.getElementById('ingRows').insertAdjacentHTML('beforeend',`<div class='row'><input placeholder='INGREDIENT' value='${esc(n)}'><input type='number' step='0.1' min='0' placeholder='g' value='${w||''}'><button onclick='this.parentNode.remove()'>X</button></div>`);}";
+  html += "function addPrepBlock(n='PREP',t='',ings){let id='p'+Date.now()+Math.floor(Math.random()*999);document.getElementById('prepRows').insertAdjacentHTML('beforeend',`<div class='prepCard'><h4>PREP</h4><div class='grid'><div class='field'><label>NAME</label><input class='pname' value='${esc(n)}'></div><div class='field'><label>TOTAL G</label><input class='ptotal' type='number' step='0.1' min='0' value='${t||''}'></div></div><div id='${id}' class='pings'></div><div class='tools'><button onclick='addPrepIng(\"${id}\")'>+ ADD INGREDIENT</button><button class='danger' onclick='this.closest(\".prepCard\").remove()'>REMOVE PREP</button></div></div>`);if(ings&&ings.length){for(let i of ings)addPrepIng(id,i.name,i.w);}else addPrepIng(id);}";
+  html += "function addPrepIng(id,n='',w=''){document.getElementById(id).insertAdjacentHTML('beforeend',`<div class='row'><input placeholder='INGREDIENT' value='${esc(n)}'><input type='number' step='0.1' min='0' placeholder='g' value='${w||''}'><button onclick='this.parentNode.remove()'>X</button></div>`);}";
   html += "function row(n,w,p){return '<tr><td>'+esc(n)+'</td><td>'+w.toFixed(1)+' g</td><td>'+p+'%</td></tr>'}";
   html += "function recalcRecipe(){let r=parseRecipe(currentTxt),nt=parseFloat(document.getElementById('newTotal').value)||0,out='';scaleReady=false;document.getElementById('saveScale').disabled=true;if(!nt||!r.total){document.getElementById('calc').innerHTML='<p class=dim>Enter a valid total.</p>';return;}let f=nt/r.total;if(r.preps.length){out+='<h4>NEW TOTAL '+nt.toFixed(1)+' g</h4>';for(let p of r.preps){let pt=(p.total||p.ings.reduce((s,i)=>s+i.w,0))*f;let base=p.total||p.ings.reduce((s,i)=>s+i.w,0)||1;out+='<h4>'+esc(p.name)+' // '+pt.toFixed(1)+' g</h4><table><tr><th>Ingredient</th><th>Weight</th><th>%</th></tr>';for(let i of p.ings)out+=row(i.name,i.w*f,Math.round(i.w/base*100));out+='</table>';}}else{let base=r.ings.reduce((s,i)=>s+i.w,0)||r.total||1;out+='<h4>NEW TOTAL '+nt.toFixed(1)+' g</h4><table><tr><th>Ingredient</th><th>Weight</th><th>%</th></tr>';for(let i of r.ings)out+=row(i.name,i.w*nt/base,Math.round(i.w/base*100));out+='</table>';}document.getElementById('calc').innerHTML=out;scaleReady=true;document.getElementById('saveScale').disabled=false;}";
   html += "function saveScale(){let nt=parseFloat(document.getElementById('newTotal').value)||0;if(!scaleReady||currentId<0||!nt)return alert('Recalculate before saving.');if(!confirm('Save new proportion to the original recipe?'))return;fetch('/scale?id='+currentId+'&total='+encodeURIComponent(nt),{method:'POST'}).then(r=>r.text()).then(t=>{alert(t);syncPortal();}).catch(()=>alert('Save failed'));}";
-  html += "function editCurrent(){document.getElementById('editTxt').value=currentTxt;document.getElementById('editor').classList.add('on');}";
+  html += "function readRows(root){return [...root.querySelectorAll('.row')].map(r=>({name:r.children[0].value.trim(),w:num(r.children[1].value)})).filter(i=>i.name&&i.w>0);}function rowsTxt(rows){return rows.map(i=>i.name.toUpperCase()+'|'+i.w.toFixed(1)+'|g').join('\\n')+'\\n';}";
+  html += "function buildTxt(){let name=val('fname')||'NEW RECIPE',cat=val('fcat')||'OTHER',fav=val('ffav')||'NO',type=val('ftype'),total=num(val('ftotal')),out=name.toUpperCase()+'\\nCATEGORY: '+cat+'\\nFAVORITE: '+fav+'\\nTOTAL: '+total.toFixed(1)+'\\n';if(type==='COMPOSITE'){out+='TYPE: COMPOSITE\\n\\n';let preps=[...document.querySelectorAll('.prepCard')];for(let p of preps){let pn=p.querySelector('.pname').value.trim()||'PREP';let rows=readRows(p.querySelector('.pings'));let pt=num(p.querySelector('.ptotal').value)||rows.reduce((s,i)=>s+i.w,0);out+='[PREP]\\nNAME: '+pn.toUpperCase()+'\\nTOTAL: '+pt.toFixed(1)+'\\n'+rowsTxt(rows)+'\\n';}}else{let rows=readRows(document.getElementById('ingRows'));if(!total)total=rows.reduce((s,i)=>s+i.w,0);out=out.replace(/TOTAL: .*\\n/,'TOTAL: '+total.toFixed(1)+'\\n');out+='\\n[INGREDIENTS]\\n\\n'+rowsTxt(rows);}return out;}";
+  html += "function saveGuided(){let txt=buildTxt();if(!validTxt(txt))return alert('Add at least one ingredient with weight.');let url=currentId>=0?'/save?id='+currentId:'/new';if(!confirm(currentId>=0?'Save changes to this recipe?':'Create this recipe on the Cardputer?'))return;fetch(url,{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:txt}).then(r=>r.text()).then(t=>{alert(t);syncPortal();}).catch(()=>alert('Save failed'));}";
+  html += "function deleteCurrent(){if(currentId<0)return alert('Save this recipe before deleting.');if(!confirm('Delete this recipe from the Cardputer?'))return;fetch('/delete?id='+currentId,{method:'POST'}).then(r=>r.text()).then(t=>{alert(t);syncPortal();}).catch(()=>alert('Delete failed'));}";
+  html += "function toggleTxt(){document.getElementById('mtext').classList.toggle('hidden');editCurrent();}";
+  html += "function editCurrent(){currentTxt=buildTxt();document.getElementById('mtext').textContent=currentTxt;document.getElementById('editTxt').value=currentTxt;document.getElementById('editor').classList.add('on');}";
   html += "function hideEditor(){document.getElementById('editor').classList.remove('on');}";
   html += "function validTxt(txt){return txt.trim().length>0&&txt.includes('|')&&(txt.includes('[INGREDIENTS]')||txt.includes('[PREP]')||txt.includes('[INGREDIENTES]')||txt.includes('[PREPARO]'));}";
-  html += "function saveEdit(){let txt=document.getElementById('editTxt').value;if(!validTxt(txt))return alert('Invalid TXT: use name, category/total and ingredients NAME|WEIGHT|g');let url=currentId>=0?'/save?id='+currentId:'/new';if(!confirm(currentId>=0?'Save changes to the original recipe?':'Create a new recipe on the Cardputer?'))return;fetch(url,{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:txt}).then(r=>r.text()).then(t=>{alert(t);syncPortal();}).catch(()=>alert('Save failed'));}";
-  html += "function newRecipe(comp){currentId=-1;scaleReady=false;let simple='NEW RECIPE\\nCATEGORY: OTHER\\nFAVORITE: NO\\nTOTAL: 100.0\\n\\n[INGREDIENTS]\\n\\nINGREDIENT 1|100.0|g\\n';let composite='NEW RECIPE COMPOSITE\\nCATEGORY: OTHER\\nFAVORITE: NO\\nTOTAL: 300.0\\nTYPE: COMPOSITE\\n\\n[PREP]\\nNAME: PREP 1\\nTOTAL: 100.0\\nINGREDIENT 1|100.0|g\\n\\n[PREP]\\nNAME: PREP 2\\nTOTAL: 200.0\\nINGREDIENT 2|200.0|g\\n';currentTxt=comp?composite:simple;document.getElementById('mtext').textContent=currentTxt;document.getElementById('mtitle').textContent=comp?'NEW RECIPE COMPOSITE':'NEW RECIPE';document.getElementById('baseTotal').textContent='--';document.getElementById('newTotal').value='';document.getElementById('calc').innerHTML='';document.getElementById('saveScale').disabled=true;document.getElementById('mdown').href='#';document.getElementById('modal').classList.add('on');editCurrent();}";
+  html += "function saveEdit(){let txt=document.getElementById('editTxt').value;if(!validTxt(txt))return alert('Invalid TXT: use name, category/total and ingredients NAME|WEIGHT|g');let url=currentId>=0?'/save?id='+currentId:'/new';if(!confirm(currentId>=0?'Save TXT changes to this recipe?':'Create this TXT recipe on the Cardputer?'))return;fetch(url,{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:txt}).then(r=>r.text()).then(t=>{alert(t);syncPortal();}).catch(()=>alert('Save failed'));}";
+  html += "function newRecipe(comp){currentId=-1;scaleReady=false;let r={name:comp?'NEW COMPOSITE':'NEW RECIPE',category:'OTHER',favorite:'NO',total:comp?300:100,type:comp?'COMPOSITE':'SIMPLE',ings:comp?[]:[{name:'INGREDIENT 1',w:100}],preps:comp?[{name:'PREP 1',total:100,ings:[{name:'INGREDIENT 1',w:100}]},{name:'PREP 2',total:200,ings:[{name:'INGREDIENT 2',w:200}]}]:[]};currentTxt='';loadForm(r);document.getElementById('mdown').href='#';document.getElementById('modal').classList.add('on');}";
   html += "function closeRecipe(){document.getElementById('editor').classList.remove('on');document.getElementById('modal').classList.remove('on');}</script></body></html>";
   return html;
 }
 void startPortalServer() {
   if (!webStarted) {
-    webServer.on("/", [](){ webServer.send(200, "text/html; charset=utf-8", portalHtml()); });
+    auto sendOffline = [](){
+      webServer.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      webServer.sendHeader("Pragma", "no-cache");
+      webServer.send(200, "text/html; charset=utf-8", offlineShareHtml());
+    };
+    webServer.on("/", [](){ webServer.send(200, "text/html; charset=utf-8", offlineShareActive ? offlineShareHtml() : portalHtml()); });
+    webServer.on("/generate_204", HTTP_GET, sendOffline);                  // Android
+    webServer.on("/gen_204", HTTP_GET, sendOffline);                       // Android / Chrome
+    webServer.on("/hotspot-detect.html", HTTP_GET, sendOffline);           // iOS / macOS
+    webServer.on("/library/test/success.html", HTTP_GET, sendOffline);     // iOS newer probes
+    webServer.on("/ncsi.txt", HTTP_GET, sendOffline);                      // Windows
+    webServer.on("/connecttest.txt", HTTP_GET, sendOffline);               // Windows
+    webServer.on("/redirect", HTTP_GET, sendOffline);                      // Windows
+    webServer.on("/canonical.html", HTTP_GET, sendOffline);                // Firefox / Linux
+    webServer.on("/success.txt", HTTP_GET, sendOffline);                   // Fire OS / generic
     webServer.on("/txt", [](){
-      int id=webServer.hasArg("id") ? webServer.arg("id").toInt() : -1;
+      int id=webServer.hasArg("id") ? webServer.arg("id").toInt() : (offlineShareActive ? offlineShareIndex : -1);
       if(id<0 || id>=(int)recipes.size()) { webServer.send(404, "text/plain; charset=utf-8", "Recipe not found"); return; }
       webServer.sendHeader("Content-Disposition", "attachment; filename=\"" + fileSafeName(recipes[id].name) + "\"");
       webServer.send(200, "text/plain; charset=utf-8", recipeToTxt(recipes[id]));
@@ -1500,6 +1661,18 @@ void startPortalServer() {
     webServer.on("/backup", [](){
       webServer.sendHeader("Content-Disposition", "attachment; filename=\"MISEDECK_BACKUP.txt\"");
       webServer.send(200, "text/plain; charset=utf-8", backupTxt());
+    });
+    webServer.on("/backup.zip", [](){
+      sendBackupZip();
+    });
+    webServer.on("/portal-cake", HTTP_POST, [](){
+      if(!sdOK){ webServer.send(500, "text/plain; charset=utf-8", "SD FAIL"); return; }
+      if (hasRecipeId("portal-cake")) { webServer.send(200, "text/plain; charset=utf-8", "THE CAKE IS REAL"); return; }
+      Recipe r = portalCakeRecipe();
+      recipes.push_back(r);
+      recipeIndex = recipes.size() - 1;
+      if(saveRecipe(recipes[recipeIndex])) { beepRecipe(); webServer.send(200, "text/plain; charset=utf-8", "THE CAKE IS REAL"); }
+      else { recipes.pop_back(); webServer.send(500, "text/plain; charset=utf-8", "Failed to unlock cake"); }
     });
     webServer.on("/scale", HTTP_POST, [](){
       if(!sdOK){ webServer.send(500, "text/plain; charset=utf-8", "SD FAIL"); return; }
@@ -1524,6 +1697,17 @@ void startPortalServer() {
       if(saveRecipe(recipes[id])) webServer.send(200, "text/plain; charset=utf-8", "Recipe updated. Use SYNC.");
       else webServer.send(500, "text/plain; charset=utf-8", "Failed to save recipe");
     });
+    webServer.on("/delete", HTTP_POST, [](){
+      if(!sdOK){ webServer.send(500, "text/plain; charset=utf-8", "SD FAIL"); return; }
+      int id=webServer.hasArg("id") ? webServer.arg("id").toInt() : -1;
+      if(id<0 || id>=(int)recipes.size()){ webServer.send(400, "text/plain; charset=utf-8", "Invalid recipe"); return; }
+      String path=recipes[id].storagePath.length()?recipeDirPath(recipes[id].storagePath):newRecipePath(recipes[id]);
+      SD.remove(path);
+      SD.remove(path+".tmp");
+      SD.remove(path+".bak");
+      recipes.erase(recipes.begin()+id);
+      webServer.send(200, "text/plain; charset=utf-8", "Recipe deleted. Use SYNC.");
+    });
     webServer.on("/new", HTTP_POST, [](){
       if(!sdOK){ webServer.send(500, "text/plain; charset=utf-8", "SD FAIL"); return; }
       String txt=webServer.arg("plain");
@@ -1535,11 +1719,19 @@ void startPortalServer() {
       if(saveRecipe(recipes.back())) webServer.send(200, "text/plain; charset=utf-8", "New recipe created. Use SYNC.");
       else { recipes.pop_back(); webServer.send(500, "text/plain; charset=utf-8", "Failed to create recipe"); }
     });
-    webServer.onNotFound([](){ webServer.sendHeader("Location", "/", true); webServer.send(302, "text/plain", ""); });
+    webServer.onNotFound([](){
+      if (offlineShareActive) {
+        webServer.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        webServer.send(200, "text/html; charset=utf-8", offlineShareHtml());
+      } else {
+        webServer.sendHeader("Location", "/", true);
+        webServer.send(302, "text/plain", "");
+      }
+    });
     webServer.begin();
     webStarted = true;
   }
-  if (!mdnsStarted) {
+  if (!offlineShareActive && !mdnsStarted) {
     mdnsStarted = MDNS.begin("misedeck");
   }
 }
@@ -1547,7 +1739,52 @@ void stopPortalServer() {
   if (webStarted) { webServer.stop(); webStarted=false; }
   if (mdnsStarted) { MDNS.end(); mdnsStarted=false; }
 }
+void startCaptiveDns() {
+  if (dnsStarted) dnsServer.stop();
+  dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+  dnsStarted = dnsServer.start(DNS_PORT, "*", OFFLINE_SHARE_IP);
+}
+void stopCaptiveDns() {
+  if (dnsStarted) {
+    dnsServer.stop();
+    dnsStarted = false;
+  }
+}
+void startOfflineShare() {
+  if (recipeIndex < 0 || recipeIndex >= (int)recipes.size()) return;
+  stopPortalServer();
+  stopCaptiveDns();
+  offlineShareActive = true;
+  offlineShareIndex = recipeIndex;
+  uint32_t chip = (uint32_t)ESP.getEfuseMac();
+  offlineShareSsid = "Mise_Deck_" + String(chip & 0xFFFFFF, HEX);
+  offlineShareSsid.toUpperCase();
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(OFFLINE_SHARE_IP, OFFLINE_SHARE_GW, OFFLINE_SHARE_MASK);
+  bool ok = WiFi.softAP(offlineShareSsid.c_str());
+  if (!ok) {
+    offlineShareActive = false;
+    offlineShareIndex = -1;
+    offlineShareSsid = "";
+    WiFi.mode(WIFI_OFF);
+    return;
+  }
+  startCaptiveDns();
+  startPortalServer();
+}
+void stopOfflineShare(bool wifiOff) {
+  if (!offlineShareActive) return;
+  stopCaptiveDns();
+  stopPortalServer();
+  WiFi.softAPdisconnect(true);
+  if (wifiOff) WiFi.mode(WIFI_OFF);
+  offlineShareActive = false;
+  offlineShareIndex = -1;
+  offlineShareSsid = "";
+}
 void disconnectWifi() {
+  stopOfflineShare(false);
   stopPortalServer();
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
@@ -1612,17 +1849,17 @@ void handleState(const KeyEvent& e) {
     case ST_RECIPE_VIEW: {
       Recipe &r=recipes[recipeIndex]; int total=r.composite?r.preps.size():r.ingredients.size();
       if(e.back)go(ST_RECIPE_LIST); else if(e.tab){r.favorite=!r.favorite; saveRecipe(r); flash(r.favorite?"FAVORITE":"UNFAVORITED");}
-      else if(e.right && (page+1)*MAX_VISIBLE>=total){ if(r.composite){ prepIndex=gi(); if(prepIndex<(int)r.preps.size())go(ST_PREP_VIEW);} else go(ST_ACTIONS); }
-      else if(e.up||e.down||e.left||e.right) nav(e,total,nullptr,ST_RECIPE_LIST);
+      else if(e.up||e.left) focusMove(-1,total);
+      else if(e.down||e.right) focusMove(1,total);
       else if(e.enter){ if(r.composite){ prepIndex=gi(); if(prepIndex<(int)r.preps.size())go(ST_PREP_VIEW);} else go(ST_ACTIONS); }
-      else if(e.ch=='O') go(ST_ACTIONS);
+      else if(e.ch==' ') go(ST_ACTIONS);
       break;
     }
     case ST_PREP_VIEW: {
       Recipe &r=recipes[recipeIndex]; Prep &p=r.preps[prepIndex];
       if(e.back)go(ST_RECIPE_VIEW);
-      else if(e.right && (page+1)*MAX_VISIBLE>=(int)p.ingredients.size())go(ST_PREP_ACTIONS);
-      else if(e.up||e.down||e.left||e.right)nav(e,p.ingredients.size(),nullptr,ST_RECIPE_VIEW);
+      else if(e.up||e.left) focusMove(-1,p.ingredients.size());
+      else if(e.down||e.right) focusMove(1,p.ingredients.size());
       else if(e.enter)go(ST_PREP_ACTIONS);
       break;
     }
@@ -1630,7 +1867,7 @@ void handleState(const KeyEvent& e) {
       Recipe &r=recipes[recipeIndex]; int total=6;
       nav(e,total, [](){ Recipe &r=recipes[recipeIndex]; int c=gi(); if(c==0)askNumber("CHANGE TOTAL","NEW TOTAL","CURRENT: "+fw(r.total),r.total,cbScaleRecipe); else if(c==1){ if(r.composite)go(ST_PREP_MENU); else go(ST_ING_MENU); } else if(c==2){ Recipe cp=r; cp.id=nowId(); cp.name=cleanName(cp.name+" COPY"); cp.storagePath=""; cp.favorite=false; recipes.push_back(cp); recipeIndex=recipes.size()-1; saveRecipe(recipes[recipeIndex]); flash("DUPLICATED"); go(ST_RECIPE_VIEW); } else if(c==3)go(ST_TIMER_MENU); else if(c==4)go(ST_SHARE_QR); else askConfirm("DELETE RECIPE?",r.name,doDeleteRecipe); }, ST_RECIPE_VIEW); break;
     }
-    case ST_SHARE_QR: if(e.back||e.enter)go(ST_ACTIONS); break;
+    case ST_SHARE_QR: if(e.back||e.enter){ stopOfflineShare(true); go(ST_ACTIONS); } break;
     case ST_PREP_ACTIONS: nav(e,4, [](){ Recipe&r=recipes[recipeIndex]; Prep&p=r.preps[prepIndex]; int c=gi(); if(c==0)askNumber("CHANGE TOTAL","NEW TOTAL","CURRENT: "+fw(p.total),p.total,cbScalePrep); else if(c==1)go(ST_ING_MENU); else if(c==2){ Prep cp=p; cp.name=cleanName(cp.name+" COPY"); r.preps.push_back(cp); recalc(r); saveRecipe(r); flash("PREP DUPLICATED"); go(ST_RECIPE_VIEW);} else askConfirm("REMOVE PREP?",p.name,doRemovePrep); }, ST_PREP_VIEW); break;
     case ST_PREP_MENU: {
       Recipe&r=recipes[recipeIndex];
@@ -1702,7 +1939,7 @@ void handleState(const KeyEvent& e) {
           toneMs(680 + aboutEggStep*45, 22);
           if(aboutEggStep >= 9) {
             aboutEggStep=0;
-            if (unlockPortalCake()) go(ST_RECIPE_VIEW);
+            if (unlockShokupan()) go(ST_RECIPE_VIEW);
             else goKeep(ST_ABOUT);
           }
         } else {
@@ -1744,6 +1981,7 @@ void setup() {
 void loop() {
   KeyEvent e = readKey();
   if (e.enter || e.back || e.del || e.tab || e.up || e.down || e.left || e.right || e.ch) handleState(e);
+  if (dnsStarted) dnsServer.processNextRequest();
   if (webStarted) webServer.handleClient();
   updateTimerAlarm();
   if (state == ST_TIMER_RUN) {
@@ -1755,3 +1993,4 @@ void loop() {
   }
   delay(15);
 }
+

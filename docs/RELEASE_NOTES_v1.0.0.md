@@ -1,8 +1,8 @@
-# MiseDeck v1.0.0 EN / v1.1 PT-BR
+﻿# Mise_Deck v1.0.0 EN / v1.1 PT-BR
 
-First public release candidate of MiseDeck for the M5Stack Cardputer.
+First public release candidate of Mise_Deck for the M5Stack Cardputer.
 
-MiseDeck is a cyberdeck-style kitchen utility firmware focused on recipe scaling, ingredient management, local-first storage, and practical kitchen tools on a tiny device.
+Mise_Deck is a cyberdeck-style kitchen utility firmware focused on recipe scaling, ingredient management, local-first storage, and practical kitchen tools on a tiny device.
 
 ## Highlights
 
@@ -20,7 +20,7 @@ MiseDeck is a cyberdeck-style kitchen utility firmware focused on recipe scaling
 - Mobile-friendly portal layout
 - TXT recipe editing and download
 - Offline QR recipe sharing
-- About screen with a hidden Portal cake recipe easter egg
+- About screen
 
 ## Language note
 
@@ -51,4 +51,6 @@ See `docs/INSTALL.md` for more details.
 
 ## Credits
 
-MiseDeck was idealized by André Fuentes / @anfuentz and vibecoded with Codex.
+Mise_Deck was idealized by AndrÃ© Fuentes / @anfuentz and vibecoded with Codex.
+
+

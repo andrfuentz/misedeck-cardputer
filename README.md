@@ -1,18 +1,18 @@
-# MiseDeck
+﻿# Mise_Deck
 
 **A pocket mise en place and kitchen utility firmware for the M5Stack Cardputer.**
 
-MiseDeck turns the M5Stack Cardputer into a pocket mise en place for recipe scaling, ingredient management, timers, offline sharing, and local browser access.
+Mise_Deck turns the M5Stack Cardputer into a pocket mise en place for recipe scaling, ingredient management, timers, offline sharing, and local browser access.
 
 > *"we are the music makers and we are the dreamers of dreams"*
 
-MiseDeck was idealized by **André Fuentes** / **@anfuentz** and vibecoded with **Codex**.
+Mise_Deck was idealized by **AndrÃ© Fuentes** / **@anfuentz** and vibecoded with **Codex**.
 
 ## Status
 
-Current public release: **v1.0.0 EN**
+Current public release: **v1.5.0**
 
-A Portuguese/Brazilian firmware build is also provided as **v1.1 PT-BR**.
+English and Portuguese/Brazilian firmware builds are provided.
 
 ## What it does
 
@@ -43,20 +43,20 @@ The firmware uses the ESP32-S3 / StampS3 target used by the Cardputer.
 
 Common controls:
 
-- `;` — up
-- `.` — down
-- `,` — left / previous
-- `/` — right / next
-- `OK` / `Enter` — confirm
-- `` ` `` / `Esc` — back / cancel
-- `Del` — delete character
-- `Tab` — favorite/unfavorite recipe
+- `;` â€” up
+- `.` â€” down
+- `,` â€” left / previous
+- `/` â€” right / next
+- `OK` / `Enter` â€” confirm
+- `` ` `` / `Esc` â€” back / cancel
+- `Del` â€” delete character
+- `Tab` â€” favorite/unfavorite recipe
 
 During text or number editing:
 
-- `,` — move cursor left
-- `/` — move cursor right
-- `Del` — delete before cursor
+- `,` â€” move cursor left
+- `/` â€” move cursor right
+- `Del` â€” delete before cursor
 
 ## Local browser portal
 
@@ -70,11 +70,11 @@ The portal runs directly from the Cardputer on your local network. It is not a c
 
 ## Recipe TXT format
 
-MiseDeck uses a simple, human-readable TXT format:
+Mise_Deck uses a simple, human-readable TXT format:
 
 ```txt
 FOCACCIA DO ANDRE
-CATEGORY: PASTA
+CATEGORY: DOUGHS
 FAVORITE: YES
 TOTAL: 700.3
 
@@ -92,13 +92,13 @@ Composite recipes use `[PREP]` blocks.
 
 ## Offline sharing
 
-MiseDeck can generate a QR code with a compact recipe summary:
+Mise_Deck can generate an offline sharing QR code:
 
 ```text
 Recipe > Actions > Share
 ```
 
-The QR code does not require Wi-Fi. It contains the recipe name, total weight, and ingredient list in plain text.
+The QR code does not require your home Wi-Fi. It helps a phone connect directly to the Cardputer sharing mode and open a local recipe page with copy/download options.
 
 ## Build
 
@@ -121,8 +121,8 @@ See [docs/INSTALL.md](docs/INSTALL.md) for flashing instructions.
 
 ## Release binaries
 
-- English: `releases/v1.0.0/MiseDeck_Cardputer_v1.0.0_EN.bin`
-- Portuguese/Brazilian: `releases/v1.1.0-PTBR/MiseDeck_Cardputer_v1.1_PT-BR.bin`
+- English: `releases/v1.5.0/Mise_Deck_Cardputer_v1.5.0_EN.bin`
+- Portuguese/Brazilian: `releases/v1.5.0/Mise_Deck_Cardputer_v1.5.0_PT-BR.bin`
 
 ## Documentation
 
@@ -135,4 +135,6 @@ See [docs/INSTALL.md](docs/INSTALL.md) for flashing instructions.
 
 ## License
 
-MiseDeck is released under the [MIT License](LICENSE).
+Mise_Deck is released under the [MIT License](LICENSE).
+
+
