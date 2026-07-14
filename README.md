@@ -2,29 +2,83 @@
 
 **A pocket mise en place and kitchen utility firmware for the M5Stack Cardputer.**
 
-Mise_Deck turns the M5Stack Cardputer into a pocket mise en place for recipe scaling, ingredient management, timers, offline sharing, and local browser access.
+Mise_Deck turns the M5Stack Cardputer into a small kitchen companion for recipe scaling, ingredient management, timers, offline sharing, and local browser access.
 
 > *"we are the music makers and we are the dreamers of dreams"*
 
 Mise_Deck was idealized by **André Fuentes** / **@anfuentz** and vibecoded with **Codex**.
 
-## Status
+## Current release
 
-Current public release: **v1.5.0**
+**v1.5.0** - English and Portuguese/Brazilian firmware builds are provided.
 
-English and Portuguese/Brazilian firmware builds are provided.
+## Interface preview
 
-## Preview
+### Main menu
 
-### Cardputer UI
+The Cardputer interface is designed around a simple amber terminal/cyberdeck style, with large menu targets and persistent navigation hints.
 
-![Mise_Deck Cardputer UI preview](media/screenshots/mise_deck_v1.5_cardputer_preview.png)
+![Mise_Deck main menu](media/screenshots/cardputer/02_main_menu.png)
 
-### Browser portal
+### Recipe library
 
-![Mise_Deck browser portal preview](media/screenshots/mise_deck_v1.5_portal_preview.png)
+Recipes are stored locally on the microSD card and organized by categories and favorites.
 
-## What it does
+![Mise_Deck recipe library](media/screenshots/cardputer/03_library.png)
+
+### Recipe overview
+
+Recipe viewing was redesigned for the small Cardputer screen: ingredients and preps are shown one at a time with large, readable weights.
+
+![Mise_Deck recipe overview](media/screenshots/cardputer/04_recipe_overview.png)
+
+### Recipe actions
+
+Each recipe has an action menu for scaling, editing ingredients, duplicating, using timers, sharing, and deleting.
+
+![Mise_Deck recipe actions](media/screenshots/cardputer/05_recipe_actions.png)
+
+### Timer and tools
+
+Mise_Deck includes kitchen utilities such as timers, quick scaling, unit conversion, battery view, and sound/volume controls.
+
+![Mise_Deck timer](media/screenshots/cardputer/06_timer.png)
+
+### Wi-Fi and local portal
+
+After connecting to Wi-Fi, the Cardputer serves a local browser portal at `misedeck.local` or the IP shown on screen.
+
+![Mise_Deck Wi-Fi portal screen](media/screenshots/cardputer/07_wifi_portal.png)
+
+## Browser portal
+
+The browser portal is designed for phone and desktop use. It runs directly from the Cardputer on your local network; it is not a cloud service and does not require an account.
+
+### Desktop overview
+
+Browse recipes by category, open recipes, download TXT files, create new recipes, sync, and access backup options.
+
+![Mise_Deck desktop browser portal](media/screenshots/portal/portal_desktop_overview.png)
+
+### Mobile recipe library
+
+The portal layout adapts to phones with stacked actions, horizontal category tabs, and larger touch targets.
+
+![Mise_Deck mobile browser portal](media/screenshots/portal/portal_mobile_home.png)
+
+### Guided browser editor
+
+Create and edit recipes through guided fields instead of raw text. Inputs normalize recipe data to uppercase for consistency.
+
+![Mise_Deck mobile recipe editor](media/screenshots/portal/portal_mobile_editor.png)
+
+### Backup export
+
+The backup menu offers full-library TXT export or individual recipe TXT files packed into a ZIP.
+
+![Mise_Deck browser backup menu](media/screenshots/portal/portal_mobile_backup.png)
+
+## Highlights
 
 - Stores recipes on a microSD card
 - Organizes recipes by category and favorites
@@ -68,16 +122,6 @@ During text or number editing:
 - `,` - move cursor left
 - `/` - move cursor right
 - `Del` - delete before cursor
-
-## Local browser portal
-
-After connecting the Cardputer to Wi-Fi:
-
-1. Open `http://misedeck.local` in a browser, or use the IP shown on the Cardputer.
-2. Browse recipes by category or the All tab.
-3. Open a recipe to view, scale, edit, save changes, delete, or download it.
-
-The portal runs directly from the Cardputer on your local network. It is not a cloud service and does not require an account.
 
 ## Recipe TXT format
 

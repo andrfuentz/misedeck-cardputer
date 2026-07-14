@@ -2,29 +2,83 @@
 
 **Um mise en place de bolso e caixa de ferramentas culinária para o M5Stack Cardputer.**
 
-O Mise_Deck transforma o M5Stack Cardputer em um mise en place de bolso para escalar receitas, gerenciar ingredientes, usar timer, compartilhar receitas offline e acessar um portal local pelo navegador.
+O Mise_Deck transforma o M5Stack Cardputer em um pequeno companheiro de cozinha para escalar receitas, gerenciar ingredientes, usar timers, compartilhar receitas offline e acessar um portal local pelo navegador.
 
 > *"nós somos os músicos e somos os sonhadores de sonhos"*
 
 O Mise_Deck foi idealizado por **André Fuentes** / **@anfuentz** e vibecodeado com **Codex**.
 
-## Status
+## Release atual
 
-Release pública atual: **v1.5.0**
+**v1.5.0** - builds em inglês e português brasileiro estão disponíveis.
 
-Builds em inglês e português brasileiro estão disponíveis.
+## Preview da interface
 
-## Preview
+### Menu principal
 
-### Interface no Cardputer
+A interface do Cardputer segue uma estética amber terminal/cyberdeck, com menus grandes e dicas de navegação sempre visíveis.
 
-![Preview da interface do Mise_Deck no Cardputer](media/screenshots/mise_deck_v1.5_cardputer_preview.png)
+![Menu principal do Mise_Deck](media/screenshots/cardputer/02_main_menu.png)
 
-### Portal no navegador
+### Biblioteca de receitas
 
-![Preview do portal do Mise_Deck](media/screenshots/mise_deck_v1.5_portal_preview.png)
+As receitas ficam salvas localmente no microSD e são organizadas por categorias e favoritas.
 
-## O que ele faz
+![Biblioteca de receitas do Mise_Deck](media/screenshots/cardputer/03_library.png)
+
+### Visão da receita
+
+A visualização da receita foi redesenhada para a tela pequena do Cardputer: ingredientes e preparos aparecem um por vez, com pesos grandes e fáceis de ler.
+
+![Visão de receita do Mise_Deck](media/screenshots/cardputer/04_recipe_overview.png)
+
+### Ações da receita
+
+Cada receita tem um menu de ações para recalcular proporção, editar ingredientes, duplicar, usar timer, compartilhar e apagar.
+
+![Ações de receita do Mise_Deck](media/screenshots/cardputer/05_recipe_actions.png)
+
+### Timer e ferramentas
+
+O Mise_Deck inclui ferramentas de cozinha como timer, cálculo rápido, conversor, tela de bateria e controle de som/volume.
+
+![Timer do Mise_Deck](media/screenshots/cardputer/06_timer.png)
+
+### Wi-Fi e portal local
+
+Depois de conectar ao Wi-Fi, o Cardputer cria um portal local acessível por `misedeck.local` ou pelo IP mostrado na tela.
+
+![Tela de Wi-Fi e portal do Mise_Deck](media/screenshots/cardputer/07_wifi_portal.png)
+
+## Portal no navegador
+
+O portal foi pensado para celular e desktop. Ele roda diretamente no Cardputer dentro da rede local; não é um serviço de nuvem e não precisa de conta.
+
+### Visão desktop
+
+Navegue pelas receitas por categoria, abra receitas, baixe TXT, crie novas receitas, sincronize e acesse as opções de backup.
+
+![Portal desktop do Mise_Deck](media/screenshots/portal/portal_desktop_overview.png)
+
+### Biblioteca no celular
+
+No celular, o portal usa ações empilhadas, abas horizontais por categoria e botões maiores para toque.
+
+![Portal mobile do Mise_Deck](media/screenshots/portal/portal_mobile_home.png)
+
+### Editor guiado
+
+Crie e edite receitas por campos guiados, sem precisar mexer diretamente no TXT. Os dados são normalizados em caixa alta para manter consistência.
+
+![Editor mobile de receita do Mise_Deck](media/screenshots/portal/portal_mobile_editor.png)
+
+### Backup
+
+O menu de backup oferece exportação da biblioteca em TXT ou receitas individuais em um arquivo ZIP.
+
+![Menu de backup do Mise_Deck](media/screenshots/portal/portal_mobile_backup.png)
+
+## Destaques
 
 - Salva receitas no microSD
 - Organiza receitas por categoria e favoritas
@@ -68,16 +122,6 @@ Durante edição de texto ou número:
 - `,` - mover cursor para esquerda
 - `/` - mover cursor para direita
 - `Del` - apagar antes do cursor
-
-## Portal local
-
-Depois de conectar o Cardputer ao Wi-Fi:
-
-1. Abra `http://misedeck.local` no navegador, ou use o IP mostrado no Cardputer.
-2. Navegue pelas receitas por categoria ou pela aba Todas.
-3. Abra uma receita para visualizar, recalcular proporção, editar, salvar, apagar ou baixar.
-
-O portal roda direto no Cardputer dentro da rede local. Ele não é um serviço de nuvem e não precisa de conta.
 
 ## Formato TXT das receitas
 
